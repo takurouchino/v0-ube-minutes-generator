@@ -9,7 +9,7 @@ import { ArrowLeft, ArrowRight, Wand2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/use-toast"
-import { getMinutes, updateMinute, type Minute } from "@/lib/local-storage"
+import { getMinuteById, updateMinute, type Minute } from "@/lib/supabase-minutes"
 
 export default function SummaryPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -17,6 +17,7 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
   const [minute, setMinute] = useState<Minute | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [summaryGenerated, setSummaryGenerated] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // サマリーデータ
   const [summary, setSummary] = useState({
@@ -28,22 +29,52 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
 
   // 議事録データの取得
   useEffect(() => {
-    const minutes = getMinutes()
-    const foundMinute = minutes.find((m) => m.id === params.id)
+    const loadMinute = async () => {
+      try {
+        setLoading(true)
+        const foundMinute = await getMinuteById(params.id)
 
-    if (foundMinute) {
-      setMinute(foundMinute)
+        if (foundMinute) {
+          setMinute(foundMinute)
 
-      // サマリーがすでにある場合は表示
-      if (foundMinute.summary) {
-        setSummary(foundMinute.summary)
-        setSummaryGenerated(true)
+          // サマリーがすでにある場合は表示
+          if (
+            foundMinute.summary_progress ||
+            foundMinute.summary_key_points ||
+            foundMinute.summary_decisions ||
+            foundMinute.summary_actions
+          ) {
+            setSummary({
+              progress: foundMinute.summary_progress || "",
+              keyPoints: foundMinute.summary_key_points || "",
+              decisions: foundMinute.summary_decisions || "",
+              actions: foundMinute.summary_actions || "",
+            })
+            setSummaryGenerated(true)
+          }
+        } else {
+          toast({
+            title: "エラー",
+            description: "議事録が見つかりませんでした",
+            variant: "destructive",
+          })
+          router.push("/minutes/new")
+        }
+      } catch (error) {
+        console.error("Failed to load minute:", error)
+        toast({
+          title: "エラー",
+          description: "議事録の読み込みに失敗しました",
+          variant: "destructive",
+        })
+        router.push("/minutes/new")
+      } finally {
+        setLoading(false)
       }
-    } else {
-      // 議事録が見つからない場合はリダイレクト
-      router.push("/minutes/new")
     }
-  }, [params.id, router])
+
+    loadMinute()
+  }, [params.id, router, toast])
 
   // 議事録の内容から適切なサマリーを生成する関数
   const generateSummaryFromContent = (content: string) => {
@@ -126,7 +157,7 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const handleGenerateSummary = () => {
+  const handleGenerateSummary = async () => {
     if (!minute || !minute.content) {
       toast({
         title: "エラー",
@@ -139,7 +170,6 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
     setIsGenerating(true)
 
     try {
-      // 議事録の内容から適切なサマリーを生成
       const newSummary = generateSummaryFromContent(minute.content)
 
       setSummary(newSummary)
@@ -149,10 +179,16 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
       // 議事録を更新
       const updatedMinute = {
         ...minute,
-        summary: newSummary,
+        summary_progress: newSummary.progress,
+        summary_key_points: newSummary.keyPoints,
+        summary_decisions: newSummary.decisions,
+        summary_actions: newSummary.actions,
       }
-      updateMinute(updatedMinute)
-      setMinute(updatedMinute)
+
+      const success = await updateMinute(updatedMinute)
+      if (success) {
+        setMinute(updatedMinute)
+      }
 
       toast({
         title: "AIサマリ生成完了",
@@ -170,27 +206,66 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const handleProceedToApproval = () => {
+  const handleProceedToApproval = async () => {
     if (!minute) return
 
-    // サマリーを保存
-    const updatedMinute = {
-      ...minute,
-      summary,
+    try {
+      // サマリーを保存
+      const updatedMinute = {
+        ...minute,
+        summary_progress: summary.progress,
+        summary_key_points: summary.keyPoints,
+        summary_decisions: summary.decisions,
+        summary_actions: summary.actions,
+      }
+
+      const success = await updateMinute(updatedMinute)
+
+      if (success) {
+        toast({
+          title: "承認フローへ進みます",
+          description: "編集内容を保存しました。承認フローへ進みます。",
+        })
+        router.push("/minutes/approval")
+      } else {
+        throw new Error("更新に失敗しました")
+      }
+    } catch (error) {
+      console.error("Failed to update minute:", error)
+      toast({
+        title: "エラー",
+        description: "議事録の更新に失敗しました",
+        variant: "destructive",
+      })
     }
-    updateMinute(updatedMinute)
+  }
 
-    toast({
-      title: "承認フローへ進みます",
-      description: "編集内容を保存しました。承認フローへ進みます。",
-    })
-
-    // 承認フロー画面へ遷移
-    router.push("/minutes/approval")
+  if (loading) {
+    return (
+      <div className="container mx-auto">
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p>議事録を読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (!minute) {
-    return <div>Loading...</div>
+    return (
+      <div className="container mx-auto">
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <p className="text-muted-foreground mb-4">議事録が見つかりませんでした</p>
+            <Button asChild>
+              <Link href="/minutes/new">議事録作成に戻る</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

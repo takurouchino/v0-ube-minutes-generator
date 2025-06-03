@@ -4,27 +4,35 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Edit, Eye } from "lucide-react"
+import { Edit, Eye, PlusCircle } from "lucide-react"
 import Link from "next/link"
-import { getThemes, type Theme } from "@/lib/local-storage"
+import { getThemes, type Theme } from "@/lib/supabase-storage"
 
 export function ThemeTable() {
   const [themes, setThemes] = useState<Theme[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // ローカルストレージからテーマを取得
-    const loadThemes = () => {
+    // Supabaseからテーマを取得
+    const loadThemes = async () => {
       try {
-        const storedThemes = getThemes()
+        setLoading(true)
+        const storedThemes = await getThemes()
         setThemes(storedThemes)
       } catch (error) {
         console.error("Failed to load themes:", error)
         setThemes([])
+      } finally {
+        setLoading(false)
       }
     }
 
     loadThemes()
   }, [])
+
+  if (loading) {
+    return <div className="text-center py-4">テーマを読み込み中...</div>
+  }
 
   return (
     <div className="rounded-md border">
@@ -43,6 +51,14 @@ export function ThemeTable() {
             <TableRow>
               <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
                 テーマがありません。新しいテーマを登録してください。
+                <div className="mt-2">
+                  <Button asChild size="sm">
+                    <Link href="/themes/new">
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      新規テーマ登録
+                    </Link>
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ) : (
@@ -57,7 +73,9 @@ export function ThemeTable() {
                   <Badge variant="outline">{theme.category}</Badge>
                 </TableCell>
                 <TableCell className="hidden md:table-cell max-w-xs truncate">{theme.description}</TableCell>
-                <TableCell className="hidden md:table-cell">{theme.createdAt}</TableCell>
+                <TableCell className="hidden md:table-cell">
+                  {theme.created_at ? new Date(theme.created_at).toLocaleDateString() : ""}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" size="icon" asChild>

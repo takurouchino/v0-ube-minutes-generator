@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
-import { ArrowRight, FileText, Users, Tag, CheckSquare, Search, MessageSquare, AlertTriangle, Lock } from "lucide-react"
+import { ArrowRight, FileText, Users, Tag, Search, MessageSquare, AlertTriangle, Lock } from "lucide-react"
 
 export default function Home() {
   return (
@@ -63,24 +63,6 @@ export default function Home() {
             <Button asChild className="w-full">
               <Link href="/minutes/new">
                 議事録作成へ <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CheckSquare className="h-8 w-8 mb-2 text-primary" />
-            <CardTitle>承認フロー</CardTitle>
-            <CardDescription>ステータス管理（ドラフト→レビュー→承認）</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p>議事録の承認フローを管理し、承認状況を一覧で確認できます。</p>
-          </CardContent>
-          <CardFooter>
-            <Button asChild className="w-full">
-              <Link href="/minutes/approval">
-                承認フローへ <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>

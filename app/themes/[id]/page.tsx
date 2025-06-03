@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeft, Edit, UserPlus, RefreshCw } from "lucide-react"
+import { ArrowLeft, Edit, UserPlus, RefreshCw, Plus } from "lucide-react"
 import Link from "next/link"
 import {
   getThemes,
@@ -16,10 +16,16 @@ import {
   getParticipantsNotInTheme,
   addParticipantToTheme,
   removeParticipantFromTheme,
+  updateParticipantRoleInTheme,
   type Theme,
   type Participant,
-} from "@/lib/local-storage"
+} from "@/lib/supabase-storage"
 import { useToast } from "@/components/ui/use-toast"
+import { AddParticipantModal } from "@/components/add-participant-modal"
+// ParticipantRoleModalをインポート
+import { ParticipantRoleModal } from "@/components/participant-role-modal"
+// AddParticipantWithRoleModalをインポート
+import { AddParticipantWithRoleModal } from "@/components/add-participant-with-role-modal"
 
 export default function ThemeDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -32,6 +38,17 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0) // 強制的に再レンダリングするためのキー
   const [activeTab, setActiveTab] = useState("current")
+  const [addParticipantModalOpen, setAddParticipantModalOpen] = useState(false)
+
+  // 状態を追加
+  const [roleModalOpen, setRoleModalOpen] = useState(false)
+  const [editingParticipant, setEditingParticipant] = useState<{
+    id: string
+    name: string
+    currentRole: string
+  } | null>(null)
+  // 状態を追加
+  const [addWithRoleModalOpen, setAddWithRoleModalOpen] = useState(false)
 
   // データを再読み込みする関数
   const refreshData = () => {
@@ -44,20 +61,21 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
   }
 
   useEffect(() => {
-    const loadData = () => {
+    const loadData = async () => {
       try {
-        const themes = getThemes()
+        setLoading(true)
+        const themes = await getThemes()
         const foundTheme = themes.find((t) => t.id === params.id)
 
         if (foundTheme) {
           setTheme(foundTheme)
 
           // テーマに参加している参加者を取得
-          const themeParticipants = getParticipantsByTheme(foundTheme.id)
+          const themeParticipants = await getParticipantsByTheme(foundTheme.id)
           setParticipants(themeParticipants)
 
           // テーマに参加していない参加者を取得
-          const notInTheme = getParticipantsNotInTheme(foundTheme.id)
+          const notInTheme = await getParticipantsNotInTheme(foundTheme.id)
           setAvailableParticipants(notInTheme)
         } else {
           setError("テーマが見つかりませんでした")
@@ -83,7 +101,7 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
   }
 
   // 選択した参加者をテーマに追加
-  const handleAddParticipants = () => {
+  const handleAddParticipants = async () => {
     if (!theme) return
     if (selectedParticipants.length === 0) {
       toast({
@@ -96,9 +114,9 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
 
     try {
       // 選択した参加者をテーマに追加
-      selectedParticipants.forEach((participantId) => {
-        addParticipantToTheme(theme.id, participantId)
-      })
+      for (const participantId of selectedParticipants) {
+        await addParticipantToTheme(theme.id, participantId)
+      }
 
       toast({
         title: "参加者を追加しました",
@@ -120,11 +138,11 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
   }
 
   // 参加者をテーマから削除
-  const handleRemoveParticipant = (participantId: string) => {
+  const handleRemoveParticipant = async (participantId: string) => {
     if (!theme) return
     if (confirm("この参加者をテーマから削除してもよろしいですか？")) {
       try {
-        removeParticipantFromTheme(theme.id, participantId)
+        await removeParticipantFromTheme(theme.id, participantId)
         toast({
           title: "参加者を削除しました",
           description: "参加者をテーマから削除しました",
@@ -139,6 +157,76 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
           variant: "destructive",
         })
       }
+    }
+  }
+
+  // 新規参加者が追加された後の処理
+  const handleParticipantAdded = () => {
+    // データを再読み込み
+    refreshData()
+    // 参加者追加タブに切り替え
+    setActiveTab("add")
+  }
+
+  // 役割編集ボタンのハンドラーを追加
+  const handleEditRole = (participant: Participant) => {
+    const currentRole = participant.theme_roles?.[params.id] || "一般参加者"
+    setEditingParticipant({
+      id: participant.id,
+      name: participant.name,
+      currentRole,
+    })
+    setRoleModalOpen(true)
+  }
+
+  // 役割更新のハンドラーを追加
+  const handleRoleUpdate = async (newRole: string) => {
+    if (!editingParticipant) return
+
+    try {
+      const success = await updateParticipantRoleInTheme(params.id, editingParticipant.id, newRole)
+
+      if (success) {
+        // データを再読み込み
+        refreshData()
+        setEditingParticipant(null)
+      } else {
+        throw new Error("役割の更新に失敗しました")
+      }
+    } catch (error) {
+      console.error("Failed to update role:", error)
+      toast({
+        title: "エラー",
+        description: "役割の更新に失敗しました",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // 参加者追加のハンドラーを更新
+  const handleAddParticipantWithRole = async (participantId: string, role: string) => {
+    if (!theme) return
+
+    try {
+      const success = await addParticipantToTheme(theme.id, participantId, role)
+
+      if (success) {
+        toast({
+          title: "参加者を追加しました",
+          description: `参加者をテーマに追加し、役割を「${role}」に設定しました`,
+        })
+        // データを再読み込み
+        refreshData()
+      } else {
+        throw new Error("参加者の追加に失敗しました")
+      }
+    } catch (error) {
+      console.error("Failed to add participant:", error)
+      toast({
+        title: "エラー",
+        description: "参加者の追加に失敗しました",
+        variant: "destructive",
+      })
     }
   }
 
@@ -208,7 +296,7 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
 
               <div>
                 <h3 className="text-sm font-medium">作成日</h3>
-                <p className="text-sm">{theme.createdAt}</p>
+                <p className="text-sm">{theme.created_at ? new Date(theme.created_at).toLocaleDateString() : "不明"}</p>
               </div>
 
               <div className="pt-2">
@@ -246,7 +334,8 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
                       <TableHeader>
                         <TableRow>
                           <TableHead>氏名</TableHead>
-                          <TableHead>役割</TableHead>
+                          <TableHead>基本役割</TableHead>
+                          <TableHead>テーマ内役割</TableHead>
                           <TableHead></TableHead>
                         </TableRow>
                       </TableHeader>
@@ -254,23 +343,29 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
                         {participants.map((participant) => (
                           <TableRow key={participant.id}>
                             <TableCell className="font-medium">
-                              <Link href={`/participants/${participant.id}`} className="hover:underline">
-                                {participant.name}
-                              </Link>
+                              {participant.name}
                               <div className="text-xs text-muted-foreground">{participant.position}</div>
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">{participant.role}</Badge>
                             </TableCell>
                             <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveParticipant(participant.id)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                削除
-                              </Button>
+                              <Badge variant="secondary">{participant.theme_roles?.[params.id] || "一般参加者"}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => handleEditRole(participant)}>
+                                  役割編集
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveParticipant(participant.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  削除
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -280,12 +375,31 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
                 </TabsContent>
 
                 <TabsContent value="add">
+                  <div className="mb-4">
+                    <Button onClick={() => setAddParticipantModalOpen(true)} className="w-full mb-2">
+                      <Plus className="mr-2 h-4 w-4" />
+                      新規参加者を追加
+                    </Button>
+                    <Button
+                      onClick={() => setAddWithRoleModalOpen(true)}
+                      className="w-full"
+                      disabled={availableParticipants.length === 0}
+                    >
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      既存参加者を役割付きで追加
+                    </Button>
+                  </div>
+
                   {availableParticipants.length === 0 ? (
                     <div className="text-center py-4 text-muted-foreground">
                       追加できる参加者がいません。
-                      <Link href="/participants/new" className="ml-2 text-primary hover:underline">
+                      <Button
+                        variant="link"
+                        onClick={() => setAddParticipantModalOpen(true)}
+                        className="ml-2 p-0 h-auto"
+                      >
                         新しい参加者を登録する
-                      </Link>
+                      </Button>
                     </div>
                   ) : (
                     <>
@@ -329,6 +443,27 @@ export default function ThemeDetailPage({ params }: { params: { id: string } }) 
           </Card>
         </div>
       </div>
+
+      <AddParticipantModal
+        open={addParticipantModalOpen}
+        onOpenChange={setAddParticipantModalOpen}
+        onParticipantAdded={handleParticipantAdded}
+      />
+      {editingParticipant && (
+        <ParticipantRoleModal
+          open={roleModalOpen}
+          onOpenChange={setRoleModalOpen}
+          participantName={editingParticipant.name}
+          currentRole={editingParticipant.currentRole}
+          onRoleUpdate={handleRoleUpdate}
+        />
+      )}
+      <AddParticipantWithRoleModal
+        open={addWithRoleModalOpen}
+        onOpenChange={setAddWithRoleModalOpen}
+        availableParticipants={availableParticipants}
+        onParticipantAdd={handleAddParticipantWithRole}
+      />
     </div>
   )
 }

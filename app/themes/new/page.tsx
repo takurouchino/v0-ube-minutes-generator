@@ -9,44 +9,57 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Switch } from "@/components/ui/switch"
-import { ArrowLeft, Save } from "lucide-react"
+import { ArrowLeft, Save, Plus } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/use-toast"
-import {
-  getParticipants,
-  addTheme,
-  updateThemeAccessControl,
-  type Participant,
-  type AccessControl,
-} from "@/lib/local-storage"
+import { getParticipants, addTheme, addParticipantToTheme, type Participant } from "@/lib/supabase-storage"
+import { AddParticipantModal } from "@/components/add-participant-modal"
 
 export default function NewThemePage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [isPublic, setIsPublic] = useState(true)
-  const [allowedGroups, setAllowedGroups] = useState<string[]>([])
-  const [allowedUsers, setAllowedUsers] = useState<string[]>([])
   const [allParticipants, setAllParticipants] = useState<Participant[]>([])
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
   const [name, setName] = useState("")
   const [category, setCategory] = useState("")
   const [description, setDescription] = useState("")
+  const [addParticipantModalOpen, setAddParticipantModalOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    const storedParticipants = getParticipants()
-    setAllParticipants(storedParticipants)
+    const loadParticipants = async () => {
+      try {
+        const storedParticipants = await getParticipants()
+        setAllParticipants(storedParticipants || [])
+      } catch (error) {
+        console.error("Failed to load participants:", error)
+        setAllParticipants([])
+      }
+    }
+
+    loadParticipants()
   }, [])
 
-  const toggleGroup = (group: string) => {
-    setAllowedGroups((prev) => (prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group]))
+  const toggleParticipant = (participantId: string) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(participantId) ? prev.filter((id) => id !== participantId) : [...prev, participantId],
+    )
   }
 
-  const toggleUser = (userId: string) => {
-    setAllowedUsers((prev) => (prev.includes(userId) ? prev.filter((u) => u !== userId) : [...prev, userId]))
+  // 新規参加者が追加された後の処理
+  const handleParticipantAdded = async () => {
+    // 参加者リストを再読み込み
+    const updatedParticipants = await getParticipants()
+    setAllParticipants(updatedParticipants)
+
+    toast({
+      title: "参加者を追加しました",
+      description: "新しい参加者が参加者マスタに追加されました",
+    })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!name.trim()) {
@@ -59,26 +72,36 @@ export default function NewThemePage() {
     }
 
     try {
+      setLoading(true)
+      console.log("Creating theme with data:", { name, category, description })
+
       // テーマを追加
-      const newTheme = addTheme({
-        name,
-        category,
-        description,
-        participants: [],
+      const newTheme = await addTheme({
+        name: name.trim(),
+        category: category.trim(),
+        description: description.trim(),
       })
 
-      // アクセス権情報を追加
-      const accessControl: AccessControl = {
-        themeId: newTheme.id,
-        isPublic,
-        allowedGroups,
-        allowedUsers,
+      if (!newTheme) {
+        throw new Error("テーマの追加に失敗しました")
       }
-      updateThemeAccessControl(accessControl)
+
+      console.log("Theme created successfully:", newTheme)
+
+      // 選択された参加者をテーマに追加
+      if (selectedParticipants.length > 0) {
+        console.log("Adding participants to theme:", selectedParticipants)
+        for (const participantId of selectedParticipants) {
+          const success = await addParticipantToTheme(newTheme.id, participantId)
+          if (!success) {
+            console.warn(`Failed to add participant ${participantId} to theme`)
+          }
+        }
+      }
 
       toast({
         title: "テーマを登録しました",
-        description: "新しいテーマが正常に登録されました",
+        description: `新しいテーマ「${name}」が正常に登録されました`,
       })
 
       router.push("/themes")
@@ -86,9 +109,11 @@ export default function NewThemePage() {
       console.error("Failed to add theme:", error)
       toast({
         title: "エラー",
-        description: "テーマの登録に失敗しました",
+        description: error instanceof Error ? error.message : "テーマの登録に失敗しました",
         variant: "destructive",
       })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -136,84 +161,58 @@ export default function NewThemePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>アクセス権設定</CardTitle>
-              <CardDescription>このテーマの公開設定とアクセス権を管理します。</CardDescription>
+              <CardTitle className="flex items-center justify-between">
+                <span>参加者設定</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setAddParticipantModalOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  新規参加者追加
+                </Button>
+              </CardTitle>
+              <CardDescription>このテーマに参加する担当者を選択します。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Switch id="public-access" checked={isPublic} onCheckedChange={setIsPublic} />
-                  <Label htmlFor="public-access">公開設定</Label>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {isPublic
-                    ? "公開：すべてのユーザーがアクセスできます"
-                    : "非公開：指定したグループ・ユーザーのみがアクセスできます"}
-                </p>
-              </div>
-
-              {!isPublic && (
-                <>
-                  <div className="space-y-2 pt-4">
-                    <Label>許可グループ</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
+              {allParticipants.length > 0 ? (
+                <div className="border rounded-md p-4 max-h-[300px] overflow-y-auto">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {allParticipants.map((participant) => (
+                      <div key={participant.id} className="flex items-center space-x-2 py-1">
                         <Checkbox
-                          id="group-management"
-                          checked={allowedGroups.includes("management")}
-                          onCheckedChange={() => toggleGroup("management")}
+                          id={`participant-${participant.id}`}
+                          checked={selectedParticipants.includes(participant.id)}
+                          onCheckedChange={() => toggleParticipant(participant.id)}
                         />
-                        <Label htmlFor="group-management" className="font-normal">
-                          経営層
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="group-admin"
-                          checked={allowedGroups.includes("admin")}
-                          onCheckedChange={() => toggleGroup("admin")}
-                        />
-                        <Label htmlFor="group-admin" className="font-normal">
-                          管理者
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="group-user"
-                          checked={allowedGroups.includes("user")}
-                          onCheckedChange={() => toggleGroup("user")}
-                        />
-                        <Label htmlFor="group-user" className="font-normal">
-                          一般ユーザー
-                        </Label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-4">
-                    <Label>許可ユーザー</Label>
-                    <div className="border rounded-md p-4 max-h-[200px] overflow-y-auto">
-                      {allParticipants.length > 0 ? (
-                        <div className="space-y-2">
-                          {allParticipants.map((participant) => (
-                            <div key={participant.id} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={`user-${participant.id}`}
-                                checked={allowedUsers.includes(participant.id)}
-                                onCheckedChange={() => toggleUser(participant.id)}
-                              />
-                              <Label htmlFor={`user-${participant.id}`} className="font-normal">
-                                {participant.name}（{participant.position}）
-                              </Label>
+                        <Label htmlFor={`participant-${participant.id}`} className="font-normal cursor-pointer">
+                          <div>
+                            <span className="font-medium">{participant.name}</span>
+                            <div className="text-xs text-muted-foreground">
+                              {participant.position} - {participant.role}
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-2 text-muted-foreground">ユーザーが登録されていません</div>
-                      )}
-                    </div>
+                          </div>
+                        </Label>
+                      </div>
+                    ))}
                   </div>
-                </>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="mb-4">参加者が登録されていません。</p>
+                  <Button type="button" onClick={() => setAddParticipantModalOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    最初の参加者を追加
+                  </Button>
+                </div>
+              )}
+
+              {selectedParticipants.length > 0 && (
+                <div className="mt-4 p-3 bg-muted rounded-md">
+                  <p className="text-sm font-medium">選択された参加者: {selectedParticipants.length}名</p>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {allParticipants
+                      .filter((p) => selectedParticipants.includes(p.id))
+                      .map((p) => p.name)
+                      .join(", ")}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -222,13 +221,19 @@ export default function NewThemePage() {
             <Button variant="outline" asChild>
               <Link href="/themes">キャンセル</Link>
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={loading}>
               <Save className="mr-2 h-4 w-4" />
-              登録する
+              {loading ? "登録中..." : "登録する"}
             </Button>
           </CardFooter>
         </div>
       </form>
+
+      <AddParticipantModal
+        open={addParticipantModalOpen}
+        onOpenChange={setAddParticipantModalOpen}
+        onParticipantAdded={handleParticipantAdded}
+      />
     </div>
   )
 }

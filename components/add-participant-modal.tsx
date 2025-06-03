@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { addParticipant } from "@/lib/local-storage"
+import { addParticipant } from "@/lib/supabase-storage"
 import { useToast } from "@/components/ui/use-toast"
 
 interface AddParticipantModalProps {
@@ -48,13 +48,16 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
 
     try {
       // 参加者を追加
-      const newParticipant = addParticipant({
+      const newParticipant = await addParticipant({
         name,
         position,
         role,
         department,
-        themes: [],
       })
+
+      if (!newParticipant) {
+        throw new Error("参加者の追加に失敗しました")
+      }
 
       console.log("Added new participant:", newParticipant)
 

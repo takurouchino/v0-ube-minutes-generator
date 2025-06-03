@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Tag, Users, CheckSquare, Search, PlusCircle, MessageSquare, AlertTriangle, Lock } from "lucide-react"
+import { Tag, Users, Search, PlusCircle, MessageSquare, AlertTriangle, Lock } from "lucide-react"
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -23,11 +23,6 @@ export default function Sidebar() {
       href: "/minutes/new",
       icon: PlusCircle,
       title: "議事録作成",
-    },
-    {
-      href: "/minutes/approval",
-      icon: CheckSquare,
-      title: "承認フロー",
     },
     {
       href: "/search",

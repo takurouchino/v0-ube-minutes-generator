@@ -48,7 +48,12 @@ ${participantsInfo}
     "speaker": "参加者ID",
     "role": "参加者の役割"
   },
-  ...
+  {
+    "id": "2", 
+    "text": "発言内容",
+    "speaker": "参加者ID",
+    "role": "参加者の役割"
+  }
 ]
 }
 
@@ -59,6 +64,7 @@ ${participantsInfo}
 4. 参加者情報に基づいて、最も適切な発言者を推測してください
 5. 役割は参加者情報の「役割」を使用してください
 6. 必ず上記のJSON形式で出力してください
+7. JSON以外の文字は一切含めないでください
 `
 
     console.log("Sending request to OpenAI API for parsing minutes")
@@ -75,15 +81,16 @@ ${participantsInfo}
         messages: [
           {
             role: "system",
-            content: "あなたは会議の議事録から発言を分離し、発言者と役割を特定する専門家です。JSONで回答してください。",
+            content:
+              "あなたは会議の議事録から発言を分離し、発言者と役割を特定する専門家です。必ず有効なJSONのみで回答してください。説明文や追加のテキストは一切含めないでください。",
           },
           {
             role: "user",
             content: prompt,
           },
         ],
-        temperature: 0.3,
-        max_tokens: 1500,
+        temperature: 0.1,
+        max_tokens: 2000,
         response_format: { type: "json_object" },
       }),
     })
@@ -100,6 +107,7 @@ ${participantsInfo}
         }
       } catch (e) {
         console.error("Failed to parse error response:", e)
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`
       }
 
       // より具体的なエラーメッセージを返す
@@ -107,34 +115,93 @@ ${participantsInfo}
         return NextResponse.json({ error: "認証エラー: APIキーが無効です" }, { status: 401 })
       } else if (response.status === 429) {
         return NextResponse.json({ error: "レート制限エラー: APIリクエストの制限に達しました" }, { status: 429 })
+      } else if (response.status === 400) {
+        return NextResponse.json({ error: "リクエストエラー: 入力内容を確認してください" }, { status: 400 })
       } else {
         return NextResponse.json({ error: `OpenAI APIエラー: ${errorMessage}` }, { status: response.status })
       }
     }
 
-    const data = await response.json()
-    console.log("Received response from OpenAI API for parsing")
+    // レスポンスをテキストとして取得
+    const responseText = await response.text()
+    console.log("Raw response from OpenAI:", responseText.substring(0, 200) + "...")
+
+    let data
+    try {
+      data = JSON.parse(responseText)
+    } catch (parseError) {
+      console.error("Failed to parse response as JSON:", responseText)
+      return NextResponse.json(
+        {
+          error: "OpenAI APIからの応答をJSONとして解析できませんでした。APIの応答形式が予期しない形式です。",
+        },
+        { status: 500 },
+      )
+    }
 
     if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+      console.error("Invalid OpenAI response structure:", data)
       return NextResponse.json({ error: "OpenAI APIからの応答形式が無効です" }, { status: 500 })
     }
 
     // レスポンスからJSONを抽出
     const content = data.choices[0].message.content
-    console.log("Response content:", content.substring(0, 100) + "...")
+    console.log("Response content:", content.substring(0, 200) + "...")
 
     let parsedContent
     try {
       parsedContent = JSON.parse(content)
     } catch (jsonError) {
       console.error("Failed to parse JSON from OpenAI response:", content)
-      return NextResponse.json({ error: "OpenAI APIからの応答をJSONとして解析できませんでした" }, { status: 500 })
+
+      // JSONの修復を試みる
+      try {
+        // 一般的なJSON修復パターン
+        let cleanedContent = content.trim()
+
+        // マークダウンのコードブロックを削除
+        cleanedContent = cleanedContent.replace(/```json\s*/g, "").replace(/```\s*/g, "")
+
+        // 先頭と末尾の不要な文字を削除
+        cleanedContent = cleanedContent.replace(/^[^{]*/, "").replace(/[^}]*$/, "")
+
+        parsedContent = JSON.parse(cleanedContent)
+        console.log("Successfully repaired JSON")
+      } catch (repairError) {
+        console.error("Failed to repair JSON:", repairError)
+        return NextResponse.json(
+          {
+            error: "OpenAI APIからの応答をJSONとして解析できませんでした。応答内容を確認してください。",
+          },
+          { status: 500 },
+        )
+      }
     }
 
     // sentences配列が存在するか確認
-    const sentences = Array.isArray(parsedContent.sentences) ? parsedContent.sentences : []
+    if (!parsedContent.sentences || !Array.isArray(parsedContent.sentences)) {
+      console.error("Invalid sentences structure:", parsedContent)
+      return NextResponse.json(
+        {
+          error: "OpenAI APIからの応答に有効な発言データが含まれていません",
+        },
+        { status: 500 },
+      )
+    }
 
-    return NextResponse.json({ sentences })
+    const sentences = parsedContent.sentences
+
+    // 各発言にIDが設定されていない場合は自動生成
+    const processedSentences = sentences.map((sentence, index) => ({
+      id: sentence.id || (index + 1).toString(),
+      text: sentence.text || "",
+      speaker: sentence.speaker || null,
+      role: sentence.role || "一般参加者",
+    }))
+
+    console.log(`Successfully parsed ${processedSentences.length} sentences`)
+
+    return NextResponse.json({ sentences: processedSentences })
   } catch (error) {
     console.error("Error in parse-minutes route:", error)
     return NextResponse.json(

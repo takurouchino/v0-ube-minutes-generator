@@ -7,10 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { AlertTriangle, CheckCircle, Eye } from "lucide-react"
+import { AlertTriangle, CheckCircle, Eye, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
-import { getEscalationsByCategory, confirmEscalation, type EscalationItem } from "@/lib/local-storage"
+import { getEscalationsByCategory, confirmEscalation, type EscalationItem } from "@/lib/supabase-escalations"
 
 export default function EscalationPage() {
   const { toast } = useToast()
@@ -19,52 +19,63 @@ export default function EscalationPage() {
   const [businessEscalations, setBusinessEscalations] = useState<EscalationItem[]>([])
   const [personnelEscalations, setPersonnelEscalations] = useState<EscalationItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   // エスカレーション情報の取得
-  useEffect(() => {
-    const loadEscalations = () => {
-      try {
-        // 最新のエスカレーション情報を取得
-        const technical = getEscalationsByCategory("technical")
-        const business = getEscalationsByCategory("business")
-        const personnel = getEscalationsByCategory("personnel")
+  const loadEscalations = async () => {
+    try {
+      setRefreshing(true)
 
-        console.log("取得したエスカレーション情報:", { technical, business, personnel }) // デバッグ用
+      // 各カテゴリのエスカレーション情報を並列取得
+      const [technical, business, personnel] = await Promise.all([
+        getEscalationsByCategory("technical"),
+        getEscalationsByCategory("business"),
+        getEscalationsByCategory("personnel"),
+      ])
 
-        setTechnicalEscalations(technical)
-        setBusinessEscalations(business)
-        setPersonnelEscalations(personnel)
-      } catch (error) {
-        console.error("Failed to load escalations:", error)
-        toast({
-          title: "エラー",
-          description: "エスカレーション情報の読み込みに失敗しました",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
-      }
+      console.log("取得したエスカレーション情報:", { technical, business, personnel })
+
+      setTechnicalEscalations(technical)
+      setBusinessEscalations(business)
+      setPersonnelEscalations(personnel)
+    } catch (error) {
+      console.error("Failed to load escalations:", error)
+      toast({
+        title: "エラー",
+        description: "エスカレーション情報の読み込みに失敗しました",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
+  }
 
+  useEffect(() => {
     loadEscalations()
-  }, [toast])
+  }, [])
 
   // エスカレーション確認処理
-  const handleConfirm = (id: string, category: "technical" | "business" | "personnel") => {
+  const handleConfirm = async (id: string, category: "technical" | "business" | "personnel") => {
     try {
-      confirmEscalation(id)
-      toast({
-        title: "確認完了",
-        description: "エスカレーション項目を確認済みにしました",
-      })
+      const success = await confirmEscalation(id)
 
-      // 状態を更新
-      if (category === "technical") {
-        setTechnicalEscalations(technicalEscalations.filter((e) => e.id !== id))
-      } else if (category === "business") {
-        setBusinessEscalations(businessEscalations.filter((e) => e.id !== id))
-      } else if (category === "personnel") {
-        setPersonnelEscalations(personnelEscalations.filter((e) => e.id !== id))
+      if (success) {
+        toast({
+          title: "確認完了",
+          description: "エスカレーション項目を確認済みにしました",
+        })
+
+        // 状態を更新（確認済みのアイテムを削除）
+        if (category === "technical") {
+          setTechnicalEscalations(technicalEscalations.filter((e) => e.id !== id))
+        } else if (category === "business") {
+          setBusinessEscalations(businessEscalations.filter((e) => e.id !== id))
+        } else if (category === "personnel") {
+          setPersonnelEscalations(personnelEscalations.filter((e) => e.id !== id))
+        }
+      } else {
+        throw new Error("確認処理に失敗しました")
       }
     } catch (error) {
       console.error("Failed to confirm escalation:", error)
@@ -88,20 +99,6 @@ export default function EscalationPage() {
     if (score >= 80) return "高"
     if (score >= 60) return "中"
     return "低"
-  }
-
-  // カテゴリの日本語名を返す
-  const getCategoryName = (category: string) => {
-    switch (category) {
-      case "technical":
-        return "技術的リスク"
-      case "business":
-        return "事業的リスク"
-      case "personnel":
-        return "人事的リスク"
-      default:
-        return category
-    }
   }
 
   // エスカレーションテーブルのレンダリング
@@ -131,17 +128,17 @@ export default function EscalationPage() {
           {displayEscalations.map((escalation) => (
             <TableRow key={escalation.id}>
               <TableCell>
-                <Badge variant={getRiskBadgeVariant(escalation.riskScore) as any} className="font-medium">
-                  {getRiskText(escalation.riskScore)}（{escalation.riskScore}）
+                <Badge variant={getRiskBadgeVariant(escalation.risk_score) as any} className="font-medium">
+                  {getRiskText(escalation.risk_score)}（{escalation.risk_score}）
                 </Badge>
               </TableCell>
-              <TableCell>{escalation.themeName}</TableCell>
-              <TableCell>{escalation.date}</TableCell>
+              <TableCell>{escalation.theme_name || "不明なテーマ"}</TableCell>
+              <TableCell>{escalation.minute_date || "不明な日付"}</TableCell>
               <TableCell className="hidden md:table-cell max-w-xs truncate">{escalation.excerpt}</TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" size="icon" asChild>
-                    <Link href={`/minutes/summary/${escalation.minuteId}`}>
+                    <Link href={`/minutes/summary/${escalation.minute_id}`}>
                       <Eye className="h-4 w-4" />
                       <span className="sr-only">詳細</span>
                     </Link>
@@ -169,15 +166,40 @@ export default function EscalationPage() {
 
   return (
     <div className="container mx-auto">
-      <div className="flex items-center mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold tracking-tight">エスカレーション</h1>
+        <Button variant="outline" onClick={loadEscalations} disabled={refreshing}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          更新
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="technical">技術的リスク</TabsTrigger>
-          <TabsTrigger value="business">事業的リスク</TabsTrigger>
-          <TabsTrigger value="personnel">人事的リスク</TabsTrigger>
+          <TabsTrigger value="technical">
+            技術的リスク
+            {technicalEscalations.length > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {technicalEscalations.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="business">
+            事業的リスク
+            {businessEscalations.length > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {businessEscalations.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="personnel">
+            人事的リスク
+            {personnelEscalations.length > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {personnelEscalations.length}
+              </Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="technical">

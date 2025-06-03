@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Wand2, Save, CheckSquare, Edit } from "lucide-react"
+import { ArrowLeft, Wand2, Save, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/use-toast"
@@ -18,15 +18,33 @@ import {
   getThemes,
   getParticipantsByTheme,
   getParticipants,
-  addMinute,
   type Theme,
   type Participant,
-  getEscalations,
-  saveEscalations,
-  generateEscalationsFromMinute,
-} from "@/lib/local-storage"
+} from "@/lib/supabase-storage"
+import { addMinute, extractKeywords } from "@/lib/supabase-minutes"
 import { AIDraftModal } from "@/components/ai-draft-modal"
-import { DocumentSuggestionModal } from "@/components/document-suggestion-modal"
+import { saveMinuteSentences } from "@/lib/supabase-sentences"
+import { generateAndSaveEscalations } from "@/lib/supabase-escalations"
+
+// LocalStorageのキー
+const DRAFT_STORAGE_KEY = "minutes-draft"
+
+// ドラフトデータの型
+type DraftData = {
+  date: string
+  time: string
+  selectedThemeId: string
+  rawText: string
+  selectedParticipants: string[]
+  summary: {
+    progress: string
+    keyPoints: string
+    decisions: string
+    actions: string
+  }
+  parsedSentences: any[]
+  activeTab: string
+}
 
 export default function NewMinutesPage() {
   const router = useRouter()
@@ -40,7 +58,7 @@ export default function NewMinutesPage() {
   const [parsedSentences, setParsedSentences] = useState<any[]>([])
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
-  const [documentSuggestionOpen, setDocumentSuggestionOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // 要約情報
   const [summary, setSummary] = useState({
@@ -56,25 +74,115 @@ export default function NewMinutesPage() {
   const [themeParticipants, setThemeParticipants] = useState<Participant[]>([])
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
 
+  // ドラフトデータをLocalStorageに保存
+  const saveDraft = () => {
+    const draftData: DraftData = {
+      date,
+      time,
+      selectedThemeId,
+      rawText,
+      selectedParticipants,
+      summary,
+      parsedSentences,
+      activeTab,
+    }
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData))
+  }
+
+  // ドラフトデータをLocalStorageから読み込み
+  const loadDraft = () => {
+    try {
+      const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY)
+      if (savedDraft) {
+        const draftData: DraftData = JSON.parse(savedDraft)
+        setDate(draftData.date || "")
+        setTime(draftData.time || "")
+        setSelectedThemeId(draftData.selectedThemeId || "")
+        setRawText(draftData.rawText || "")
+        setSelectedParticipants(draftData.selectedParticipants || [])
+        setSummary(draftData.summary || { progress: "", keyPoints: "", decisions: "", actions: "" })
+        setParsedSentences(draftData.parsedSentences || [])
+        setActiveTab(draftData.activeTab || "input")
+        return true
+      }
+    } catch (error) {
+      console.error("Failed to load draft:", error)
+    }
+    return false
+  }
+
+  // ドラフトデータをクリア
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_STORAGE_KEY)
+    setDate("")
+    setTime("")
+    setSelectedThemeId("")
+    setRawText("")
+    setSelectedParticipants([])
+    setSummary({ progress: "", keyPoints: "", decisions: "", actions: "" })
+    setParsedSentences([])
+    setActiveTab("input")
+    toast({
+      title: "新規議事録作成",
+      description: "新しい議事録の作成を開始しました",
+    })
+  }
+
   // テーマと参加者データの取得
   useEffect(() => {
-    const storedThemes = getThemes()
-    const storedParticipants = getParticipants()
-    setThemes(storedThemes)
-    setAllParticipants(storedParticipants)
-  }, [])
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        const storedThemes = await getThemes()
+        const storedParticipants = await getParticipants()
+        setThemes(storedThemes)
+        setAllParticipants(storedParticipants)
+
+        // ドラフトデータを読み込み
+        loadDraft()
+      } catch (error) {
+        console.error("Failed to load themes and participants:", error)
+        toast({
+          title: "エラー",
+          description: "テーマと参加者の読み込みに失敗しました",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [toast])
+
+  // 入力値が変更されたときにドラフトを保存
+  useEffect(() => {
+    if (!loading) {
+      saveDraft()
+    }
+  }, [date, time, selectedThemeId, rawText, selectedParticipants, summary, parsedSentences, activeTab, loading])
 
   // テーマが選択されたときに参加者を更新
   useEffect(() => {
-    if (selectedThemeId) {
-      const participants = getParticipantsByTheme(selectedThemeId)
-      setThemeParticipants(participants)
-      // デフォルトですべての参加者を選択
-      setSelectedParticipants(participants.map((p) => p.id))
-    } else {
-      setThemeParticipants([])
-      setSelectedParticipants([])
+    const loadThemeParticipants = async () => {
+      if (selectedThemeId) {
+        try {
+          const participants = await getParticipantsByTheme(selectedThemeId)
+          setThemeParticipants(participants)
+          // デフォルトですべての参加者を選択
+          setSelectedParticipants(participants.map((p) => p.id))
+        } catch (error) {
+          console.error("Failed to load theme participants:", error)
+          setThemeParticipants([])
+          setSelectedParticipants([])
+        }
+      } else {
+        setThemeParticipants([])
+        setSelectedParticipants([])
+      }
     }
+
+    loadThemeParticipants()
   }, [selectedThemeId])
 
   // 参加者の選択状態を切り替え
@@ -276,7 +384,7 @@ export default function NewMinutesPage() {
   }
 
   // 議事録を保存する処理
-  const handleSaveMinutes = () => {
+  const handleSaveMinutes = async () => {
     if (!selectedThemeId || !date || !time || !rawText.trim()) {
       toast({
         title: "入力エラー",
@@ -296,59 +404,80 @@ export default function NewMinutesPage() {
         setSummary(generatedSummary)
       }
 
-      const newMinute = addMinute({
-        themeId: selectedThemeId,
+      // キーワードを抽出
+      const keywords = extractKeywords(rawText, {
+        progress: summary.progress,
+        keyPoints: summary.keyPoints,
+        decisions: summary.decisions,
+        actions: summary.actions,
+      })
+
+      const newMinute = await addMinute({
+        theme_id: selectedThemeId,
         title: selectedTheme?.name || "無題の会議",
         date,
         time,
-        participants: selectedParticipants,
-        content: rawText, // 議事録の内容
-        sentences: parsedSentences.length > 0 ? parsedSentences : undefined,
-        summary: {
-          progress: summary.progress || "特記事項なし",
-          keyPoints: summary.keyPoints || "特記事項なし",
-          decisions: summary.decisions || "特記事項なし",
-          actions: summary.actions || "特記事項なし",
-        },
+        content: rawText,
+        summary_progress: summary.progress || "特記事項なし",
+        summary_key_points: summary.keyPoints || "特記事項なし",
+        summary_decisions: summary.decisions || "特記事項なし",
+        summary_actions: summary.actions || "特記事項なし",
+        keywords,
         status: "draft",
-        author: "現在のユーザー", // 実際のアプリでは認証済みユーザー情報を使用
+        author: "現在のユーザー",
+        participants: selectedParticipants,
       })
 
-      console.log("保存された議事録:", newMinute) // デバッグ用
-      console.log("保存された議事録の内容:", rawText) // デバッグ用
+      if (!newMinute) {
+        throw new Error("議事録の保存に失敗しました")
+      }
 
-      // エスカレーション情報を自動生成
-      const escalations = generateEscalationsFromMinute(newMinute)
-      if (escalations.length > 0) {
-        // 既存のエスカレーション情報を取得
-        const existingEscalations = getEscalations()
-
-        // 新しいエスカレーション情報を追加
-        const newEscalations = escalations.map((escalation) => ({
-          ...escalation,
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-          createdAt: new Date().toISOString().split("T")[0],
+      // 発言分離データが存在する場合はSupabaseに保存
+      if (parsedSentences.length > 0) {
+        const sentencesToSave = parsedSentences.map((sentence, index) => ({
+          participant_id: sentence.speaker || null,
+          sentence_text: sentence.text,
+          role_tag: sentence.role || null,
+          sentence_order: index + 1,
         }))
 
-        // エスカレーション情報を保存
-        saveEscalations([...existingEscalations, ...newEscalations])
+        console.log("Saving sentences to Supabase:", sentencesToSave)
 
-        console.log("生成されたエスカレーション:", newEscalations) // デバッグ用
+        const sentencesSaved = await saveMinuteSentences(newMinute.id, sentencesToSave)
 
-        // エスカレーションが検出された場合は通知
-        toast({
-          title: "エスカレーション検出",
-          description: `${escalations.length}件のリスク項目が検出されました。エスカレーション画面で確認してください。`,
-          variant: "warning",
-        })
+        if (sentencesSaved) {
+          console.log("発言データの保存に成功しました")
+        } else {
+          console.warn("発言データの保存に失敗しましたが、議事録は正常に保存されました")
+        }
       }
+
+      // エスカレーション情報を自動生成・保存
+      try {
+        const escalationCount = await generateAndSaveEscalations(newMinute.id, selectedThemeId, rawText)
+
+        if (escalationCount > 0) {
+          toast({
+            title: "エスカレーション検出",
+            description: `${escalationCount}件のリスク項目が検出され、データベースに保存されました。エスカレーション画面で確認してください。`,
+            variant: "warning",
+          })
+        }
+      } catch (escalationError) {
+        console.error("Failed to generate escalations:", escalationError)
+        // エスカレーション生成に失敗しても議事録保存は成功とする
+      }
+
+      console.log("保存された議事録:", newMinute)
+
+      // 保存成功後にドラフトをクリア
+      clearDraft()
 
       toast({
         title: "議事録を保存しました",
-        description: "議事録が正常に保存されました。検索・履歴画面で確認できます。",
+        description: `議事録${parsedSentences.length > 0 ? "と発言データ" : ""}が正常に保存されました。検索・履歴画面で確認できます。`,
       })
 
-      // 検索・履歴画面へ遷移
       router.push("/search")
     } catch (error) {
       console.error("Failed to save minutes:", error)
@@ -360,96 +489,30 @@ export default function NewMinutesPage() {
     }
   }
 
-  // 議事録を承認フローに送る処理
-  const handleSubmitForApproval = () => {
-    if (!selectedThemeId || !date || !time || !rawText.trim()) {
-      toast({
-        title: "入力エラー",
-        description: "テーマ、日時、議事録内容は必須項目です。",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      // 議事録を保存
-      const selectedTheme = themes.find((t) => t.id === selectedThemeId)
-
-      // サマリーが生成されていない場合は生成
-      if (!summary.progress && !summary.keyPoints && !summary.decisions && !summary.actions) {
-        const generatedSummary = generateSummaryFromContent(rawText)
-        setSummary(generatedSummary)
-      }
-
-      const newMinute = addMinute({
-        themeId: selectedThemeId,
-        title: selectedTheme?.name || "無題の会議",
-        date,
-        time,
-        participants: selectedParticipants,
-        content: rawText,
-        sentences: parsedSentences.length > 0 ? parsedSentences : undefined,
-        summary: {
-          progress: summary.progress || "特記事項なし",
-          keyPoints: summary.keyPoints || "特記事項なし",
-          decisions: summary.decisions || "特記事項なし",
-          actions: summary.actions || "特記事項なし",
-        },
-        status: "review", // 承認フロー用にステータスを「レビュー中」に設定
-        author: "現在のユーザー", // 実際のアプリでは認証済みユーザー情報を使用
-      })
-
-      // エスカレーション情報を自動生成
-      const escalations = generateEscalationsFromMinute(newMinute)
-      if (escalations.length > 0) {
-        // 既存のエスカレーション情報を取得
-        const existingEscalations = getEscalations()
-
-        // 新しいエスカレーション情報を追加
-        const newEscalations = escalations.map((escalation) => ({
-          ...escalation,
-          id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-          createdAt: new Date().toISOString().split("T")[0],
-        }))
-
-        // エスカレーション情報を保存
-        saveEscalations([...existingEscalations, ...newEscalations])
-
-        // エスカレーションが検出された場合は通知
-        toast({
-          title: "エスカレーション検出",
-          description: `${escalations.length}件のリスク項目が検出されました。エスカレーション画面で確認してください。`,
-          variant: "warning",
-        })
-      }
-
-      toast({
-        title: "承認フローに送信しました",
-        description: "議事録が承認フローに送信されました。",
-      })
-
-      // 承認フロー画面へ遷移
-      router.push("/minutes/approval")
-    } catch (error) {
-      console.error("Failed to submit minutes for approval:", error)
-      toast({
-        title: "エラー",
-        description: "議事録の承認フローへの送信に失敗しました",
-        variant: "destructive",
-      })
-    }
+  if (loading) {
+    return (
+      <div className="container mx-auto flex items-center justify-center h-[50vh]">
+        <p>読み込み中...</p>
+      </div>
+    )
   }
 
   return (
     <div className="container mx-auto">
-      <div className="flex items-center mb-6">
-        <Button variant="ghost" size="sm" asChild className="mr-4">
-          <Link href="/">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            戻る
-          </Link>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <Button variant="ghost" size="sm" asChild className="mr-4">
+            <Link href="/">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              戻る
+            </Link>
+          </Button>
+          <h1 className="text-3xl font-bold tracking-tight">議事録作成</h1>
+        </div>
+        <Button variant="outline" onClick={clearDraft}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          新規作成
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">議事録作成</h1>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -464,7 +527,7 @@ export default function NewMinutesPage() {
           <Card>
             <CardHeader>
               <CardTitle>会議基本情報</CardTitle>
-              <CardDescription>会議の基本情報を入力してください。</CardDescription>
+              <CardDescription>会議の基本情報を入力してください。入力内容は自動的に保存されます。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -532,16 +595,10 @@ export default function NewMinutesPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="minutes-text">議事録原稿</Label>
-                  <div className="flex space-x-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDocumentSuggestionOpen(true)}>
-                      <Edit className="mr-2 h-4 w-4" />
-                      ドキュメント修正提案
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={handleOpenAiModal}>
-                      <Wand2 className="mr-2 h-4 w-4" />
-                      AIドラフト生成
-                    </Button>
-                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={handleOpenAiModal}>
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    AIドラフト生成
+                  </Button>
                 </div>
                 <Textarea
                   id="minutes-text"
@@ -568,16 +625,10 @@ export default function NewMinutesPage() {
                   </>
                 )}
               </Button>
-              <div className="flex space-x-2">
-                <Button variant="outline" onClick={handleSaveMinutes}>
-                  <Save className="mr-2 h-4 w-4" />
-                  議事録を保存
-                </Button>
-                <Button onClick={handleSubmitForApproval}>
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  議事録の承認
-                </Button>
-              </div>
+              <Button variant="outline" onClick={handleSaveMinutes}>
+                <Save className="mr-2 h-4 w-4" />
+                議事録を保存
+              </Button>
             </CardFooter>
           </Card>
         </TabsContent>
@@ -600,16 +651,10 @@ export default function NewMinutesPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 基本情報に戻る
               </Button>
-              <div className="flex space-x-2">
-                <Button variant="outline" onClick={handleSaveMinutes}>
-                  <Save className="mr-2 h-4 w-4" />
-                  議事録を保存
-                </Button>
-                <Button onClick={handleSubmitForApproval}>
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  議事録の承認
-                </Button>
-              </div>
+              <Button onClick={handleSaveMinutes}>
+                <Save className="mr-2 h-4 w-4" />
+                議事録を保存
+              </Button>
             </CardFooter>
           </Card>
         </TabsContent>
@@ -620,13 +665,6 @@ export default function NewMinutesPage() {
         onOpenChange={setAiModalOpen}
         onDraftGenerated={handleDraftGenerated}
         selectedParticipants={selectedParticipants}
-      />
-
-      <DocumentSuggestionModal
-        open={documentSuggestionOpen}
-        onOpenChange={setDocumentSuggestionOpen}
-        documentText={rawText}
-        onApplySuggestions={(text) => setRawText(text)}
       />
     </div>
   )

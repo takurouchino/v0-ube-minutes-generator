@@ -7,9 +7,22 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Download, Eye, SearchIcon } from "lucide-react"
+import { Download, Eye, SearchIcon, Trash2 } from "lucide-react"
 import Link from "next/link"
-import { getMinutes, getThemes, getParticipants, type Minute, type Theme, type Participant } from "@/lib/local-storage"
+import { getMinutes, searchMinutes, deleteMinute, type Minute } from "@/lib/supabase-minutes"
+import { getThemes, getParticipants, type Theme, type Participant } from "@/lib/supabase-storage"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
 
 export default function SearchPage() {
   const [keyword, setKeyword] = useState("")
@@ -18,136 +31,182 @@ export default function SearchPage() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [searchResults, setSearchResults] = useState<Minute[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // テーマと参加者のデータ
   const [themes, setThemes] = useState<Theme[]>([])
   const [participants, setParticipants] = useState<Participant[]>([])
 
-  // 初期データの取得
-  useEffect(() => {
-    const storedThemes = getThemes()
-    const storedParticipants = getParticipants()
-    const storedMinutes = getMinutes()
+  const { toast } = useToast()
 
-    setThemes(storedThemes)
-    setParticipants(storedParticipants)
-    setSearchResults(storedMinutes)
-  }, [])
+  // 初期データの取得 - 依存配列を空にして一度だけ実行
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        const [storedThemes, storedParticipants, storedMinutes] = await Promise.all([
+          getThemes(),
+          getParticipants(),
+          getMinutes(),
+        ])
+
+        setThemes(storedThemes)
+        setParticipants(storedParticipants)
+        setSearchResults(storedMinutes)
+      } catch (error) {
+        console.error("Failed to load data:", error)
+        toast({
+          title: "エラー",
+          description: "データの読み込みに失敗しました。",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [toast]) // toastを依存配列に追加
 
   // 検索処理
-  const handleSearch = () => {
-    // 検索条件がない場合は全件表示
-    if (!keyword && selectedTheme === "all" && selectedParticipant === "all" && !startDate && !endDate) {
-      setSearchResults(getMinutes())
-      return
-    }
+  const handleSearch = async () => {
+    try {
+      setLoading(true)
+      let results: Minute[] = []
 
-    let results = getMinutes()
+      // キーワード検索がある場合
+      if (keyword.trim()) {
+        results = await searchMinutes(keyword.trim())
+      } else {
+        results = await getMinutes()
+      }
 
-    // キーワード検索
-    if (keyword) {
-      results = results.filter((minute) => {
-        // タイトル、内容、サマリーなどを検索
-        return (
-          minute.title.toLowerCase().includes(keyword.toLowerCase()) ||
-          minute.content.toLowerCase().includes(keyword.toLowerCase()) ||
-          (minute.summary?.progress && minute.summary.progress.toLowerCase().includes(keyword.toLowerCase())) ||
-          (minute.summary?.keyPoints && minute.summary.keyPoints.toLowerCase().includes(keyword.toLowerCase())) ||
-          (minute.summary?.decisions && minute.summary.decisions.toLowerCase().includes(keyword.toLowerCase())) ||
-          (minute.summary?.actions && minute.summary.actions.toLowerCase().includes(keyword.toLowerCase())) ||
-          (minute.sentences && minute.sentences.some((s) => s.text.toLowerCase().includes(keyword.toLowerCase())))
-        )
+      // テーマでフィルタリング
+      if (selectedTheme !== "all") {
+        results = results.filter((minute) => minute.theme_id === selectedTheme)
+      }
+
+      // 参加者でフィルタリング
+      if (selectedParticipant !== "all") {
+        results = results.filter((minute) => minute.participants.includes(selectedParticipant))
+      }
+
+      // 日付でフィルタリング
+      if (startDate) {
+        results = results.filter((minute) => minute.date >= startDate)
+      }
+      if (endDate) {
+        results = results.filter((minute) => minute.date <= endDate)
+      }
+
+      setSearchResults(results)
+    } catch (error) {
+      console.error("Failed to search minutes:", error)
+      toast({
+        title: "エラー",
+        description: "検索に失敗しました。",
+        variant: "destructive",
       })
+    } finally {
+      setLoading(false)
     }
+  }
 
-    // テーマでフィルタリング
-    if (selectedTheme !== "all") {
-      results = results.filter((minute) => minute.themeId === selectedTheme)
-    }
+  // 議事録削除処理
+  const handleDeleteMinute = async (minuteId: string, title: string) => {
+    try {
+      setDeletingId(minuteId)
 
-    // 参加者でフィルタリング
-    if (selectedParticipant !== "all") {
-      results = results.filter((minute) => minute.participants.includes(selectedParticipant))
-    }
+      const success = await deleteMinute(minuteId)
 
-    // 日付でフィルタリング
-    if (startDate) {
-      results = results.filter((minute) => minute.date >= startDate)
-    }
-    if (endDate) {
-      results = results.filter((minute) => minute.date <= endDate)
-    }
+      if (success) {
+        // 検索結果から削除された議事録を除外
+        setSearchResults((prev) => prev.filter((minute) => minute.id !== minuteId))
 
-    setSearchResults(results)
+        toast({
+          title: "削除完了",
+          description: `議事録「${title}」を削除しました。`,
+        })
+      } else {
+        throw new Error("削除に失敗しました")
+      }
+    } catch (error) {
+      console.error("Failed to delete minute:", error)
+      toast({
+        title: "エラー",
+        description: "議事録の削除に失敗しました。",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // テーマIDからテーマ名を取得
-  const getThemeName = (themeId: string) => {
+  const getThemeName = (themeId: string | null) => {
+    if (!themeId) return "テーマなし"
     const theme = themes.find((t) => t.id === themeId)
     return theme ? theme.name : "不明なテーマ"
   }
 
-  // 参加者IDから参加者名を取得
-  const getParticipantName = (participantId: string) => {
-    const participant = participants.find((p) => p.id === participantId)
-    return participant ? participant.name : "不明な参加者"
-  }
-
   // 議事録からキーワードを抽出
   const extractKeywords = (minute: Minute) => {
+    // Supabaseに保存されているキーワードがあればそれを使用
+    if (minute.keywords && minute.keywords.length > 0) {
+      return minute.keywords.slice(0, 5)
+    }
+
+    // なければ動的に生成
     const keywords = new Set<string>()
 
-    // 議事録の内容からキーワードを抽出
     if (minute.content) {
-      // 重要そうな単語を抽出（例：名詞、数字を含む単語など）
       const contentWords = minute.content.split(/\s+|、|。/)
       contentWords.forEach((word) => {
-        // 2文字以上の単語を抽出（数字のみは除外）
         if (word.length >= 2 && !/^\d+$/.test(word)) {
           keywords.add(word.replace(/[.,;:!?]/g, ""))
         }
       })
     }
 
-    // サマリーからキーワードを抽出
-    if (minute.summary) {
-      // 特に要点まとめからキーワードを優先的に抽出
-      const keyPointsWords = minute.summary.keyPoints.split(/\s+|、|。|\n/)
-      keyPointsWords.forEach((word) => {
-        // 数字の後に%や単位がある場合は特に重要
+    const summaryText = [
+      minute.summary_progress,
+      minute.summary_key_points,
+      minute.summary_decisions,
+      minute.summary_actions,
+    ]
+      .filter(Boolean)
+      .join(" ")
+
+    if (summaryText) {
+      const summaryWords = summaryText.split(/\s+|、|。|\n/)
+      summaryWords.forEach((word) => {
         if (/\d+%|\d+[度円個台]/.test(word)) {
           keywords.add(word.replace(/[.,;:!?]/g, ""))
-        }
-        // 2文字以上の単語を抽出（数字のみは除外）
-        else if (word.length >= 2 && !/^\d+$/.test(word)) {
-          keywords.add(word.replace(/[.,;:!?]/g, ""))
-        }
-      })
-
-      // 決定事項からもキーワードを抽出
-      const decisionsWords = minute.summary.decisions.split(/\s+|、|。/)
-      decisionsWords.forEach((word) => {
-        if (word.length >= 2 && !/^\d+$/.test(word)) {
-          keywords.add(word.replace(/[.,;:!?]/g, ""))
-        }
-      })
-
-      // アクションアイテムからもキーワードを抽出
-      const actionsWords = minute.summary.actions.split(/\s+|、|。|\n/)
-      actionsWords.forEach((word) => {
-        if (word.length >= 2 && !/^\d+$/.test(word)) {
+        } else if (word.length >= 2 && !/^\d+$/.test(word)) {
           keywords.add(word.replace(/[.,;:!?]/g, ""))
         }
       })
     }
 
-    // 重要そうなキーワードを優先（例：「不良率」「改善」「検討」など）
     const priorityKeywords = Array.from(keywords).filter((keyword) =>
       /不良率|改善|検討|対策|実施|完了|決定|報告|確認/.test(keyword),
     )
 
-    // 優先キーワードと他のキーワードを組み合わせて返す
     return [...priorityKeywords, ...Array.from(keywords).filter((k) => !priorityKeywords.includes(k))].slice(0, 5)
+  }
+
+  if (loading) {
+    return (
+      <div className="container mx-auto">
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p>データを読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -220,9 +279,9 @@ export default function SearchPage() {
             </div>
           </div>
 
-          <Button className="w-full" onClick={handleSearch}>
+          <Button className="w-full" onClick={handleSearch} disabled={loading}>
             <SearchIcon className="mr-2 h-4 w-4" />
-            検索
+            {loading ? "検索中..." : "検索"}
           </Button>
         </CardContent>
       </Card>
@@ -259,18 +318,26 @@ export default function SearchPage() {
                     </TableCell>
                     <TableCell>{result.date}</TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <Badge variant="outline">{getThemeName(result.themeId)}</Badge>
+                      <Badge variant="outline">{getThemeName(result.theme_id)}</Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="flex flex-wrap gap-1">
-                        {result.participants.slice(0, 2).map((participantId, index) => (
-                          <span key={index} className="text-xs">
-                            {getParticipantName(participantId)}
-                            {index < Math.min(result.participants.length, 2) - 1 ? ", " : ""}
-                          </span>
-                        ))}
-                        {result.participants.length > 2 && (
-                          <span className="text-xs text-muted-foreground">+{result.participants.length - 2}</span>
+                        {result.participant_details && result.participant_details.length > 0 ? (
+                          <>
+                            {result.participant_details.slice(0, 2).map((participant, index) => (
+                              <span key={participant.id} className="text-xs">
+                                {participant.name}
+                                {index < Math.min(result.participant_details!.length, 2) - 1 ? ", " : ""}
+                              </span>
+                            ))}
+                            {result.participant_details.length > 2 && (
+                              <span className="text-xs text-muted-foreground">
+                                +{result.participant_details.length - 2}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">参加者情報なし</span>
                         )}
                       </div>
                     </TableCell>
@@ -292,11 +359,43 @@ export default function SearchPage() {
                           </Link>
                         </Button>
                         <Button variant="ghost" size="icon" asChild>
-                          <Link href={`/minutes/${result.id}/download`}>
+                          <Link href={`/minutes/sentences/${result.id}`}>
                             <Download className="h-4 w-4" />
-                            <span className="sr-only">ダウンロード</span>
+                            <span className="sr-only">発言データ</span>
                           </Link>
                         </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              disabled={deletingId === result.id}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">削除</span>
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>議事録を削除しますか？</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                「{result.title}」を削除します。この操作は取り消すことができません。
+                                関連する発言データやエスカレーション情報も同時に削除されます。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteMinute(result.id, result.title)}
+                                className="bg-red-600 hover:bg-red-700"
+                                disabled={deletingId === result.id}
+                              >
+                                {deletingId === result.id ? "削除中..." : "削除"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>

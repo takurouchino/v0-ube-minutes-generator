@@ -50,13 +50,6 @@ export default function Navbar() {
                 議事録作成
               </Link>
               <Link
-                href="/minutes/approval"
-                className={`px-3 py-2 rounded-md ${pathname === "/minutes/approval" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                承認フロー
-              </Link>
-              <Link
                 href="/search"
                 className={`px-3 py-2 rounded-md ${pathname === "/search" ? "bg-muted" : "hover:bg-muted"}`}
                 onClick={() => setOpen(false)}
