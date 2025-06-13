@@ -1,6 +1,7 @@
 "use client"
 
 import { supabase } from "./supabase"
+import { useAuth } from "./auth-context" // Import useAuth hook
 
 // 発言データの型定義
 export type MinuteSentence = {
@@ -61,6 +62,8 @@ async function getCurrentUser() {
 
 // 発言データの取得（議事録IDで絞り込み）
 export async function getMinuteSentences(minuteId: string): Promise<MinuteSentence[]> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     // 認証状態を確認
     const user = await getCurrentUser()
@@ -72,6 +75,7 @@ export async function getMinuteSentences(minuteId: string): Promise<MinuteSenten
       .from("minute_sentences_with_details")
       .select("*")
       .eq("minute_id", minuteId)
+      .eq("company_id", companyId) // Add company_id filter
       .order("sentence_order")
 
     if (error) {
@@ -111,6 +115,8 @@ export async function saveMinuteSentences(
     sentence_order: number
   }>,
 ): Promise<boolean> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     // 認証状態を確認
     const user = await getCurrentUser()
@@ -122,6 +128,7 @@ export async function saveMinuteSentences(
     try {
       const { error: deleteError } = await supabase.rpc("delete_minute_sentences", {
         p_minute_id: minuteId,
+        p_company_id: companyId, // Pass company_id to the function
       })
 
       if (deleteError) {
@@ -149,6 +156,7 @@ export async function saveMinuteSentences(
         sentence_text: sentence.sentence_text,
         role_tag: sentence.role_tag,
         sentence_order: sentence.sentence_order,
+        company_id: companyId, // Add company_id to the inserted data
       }))
 
       const { error: insertError } = await supabase.from("minute_sentences").insert(sentencesToInsert)
@@ -192,13 +200,19 @@ export async function addMinuteSentence(sentence: {
   role_tag: string | null
   sentence_order: number
 }): Promise<MinuteSentence | null> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     const user = await getCurrentUser()
     if (!user) {
       console.warn("認証されていませんが、プレビュー環境のため処理を続行します")
     }
 
-    const { data, error } = await supabase.from("minute_sentences").insert(sentence).select().single()
+    const { data, error } = await supabase
+      .from("minute_sentences")
+      .insert({ ...sentence, company_id: companyId }) // Add company_id to the inserted data
+      .select()
+      .single()
 
     if (error) {
       console.error("Add sentence error:", error)
@@ -238,6 +252,8 @@ export async function addMinuteSentence(sentence: {
 
 // 発言データの更新
 export async function updateMinuteSentence(sentence: MinuteSentence): Promise<boolean> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -253,6 +269,7 @@ export async function updateMinuteSentence(sentence: MinuteSentence): Promise<bo
         sentence_order: sentence.sentence_order,
       })
       .eq("id", sentence.id)
+      .eq("company_id", companyId) // Add company_id filter
 
     if (error) {
       console.error("Update sentence error:", error)
@@ -275,13 +292,15 @@ export async function updateMinuteSentence(sentence: MinuteSentence): Promise<bo
 
 // 発言データの削除
 export async function deleteMinuteSentence(id: string): Promise<boolean> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     const user = await getCurrentUser()
     if (!user) {
       console.warn("認証されていませんが、プレビュー環境のため処理を続行します")
     }
 
-    const { error } = await supabase.from("minute_sentences").delete().eq("id", id)
+    const { error } = await supabase.from("minute_sentences").delete().eq("id", id).eq("company_id", companyId) // Add company_id filter
 
     if (error) {
       console.error("Delete sentence error:", error)
@@ -304,6 +323,8 @@ export async function deleteMinuteSentence(id: string): Promise<boolean> {
 
 // 発言順序の再整理（関数を使用）
 export async function reorderMinuteSentences(minuteId: string): Promise<boolean> {
+  const { companyId } = useAuth() // Get companyId from useAuth
+
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -312,6 +333,7 @@ export async function reorderMinuteSentences(minuteId: string): Promise<boolean>
 
     const { error } = await supabase.rpc("reorder_minute_sentences", {
       p_minute_id: minuteId,
+      p_company_id: companyId, // Pass company_id to the function
     })
 
     if (error) {

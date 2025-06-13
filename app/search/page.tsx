@@ -23,6 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/auth-context" // useAuthをインポート
 
 export default function SearchPage() {
   const [keyword, setKeyword] = useState("")
@@ -39,17 +40,32 @@ export default function SearchPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
 
   const { toast } = useToast()
+  const { userProfile } = useAuth() // userProfileを取得
 
-  // 初期データの取得 - 依存配列を空にして一度だけ実行
+  // 初期データの取得 - userProfileが変更されたときに実行
   useEffect(() => {
     const loadData = async () => {
+      if (!userProfile?.company_id) {
+        console.log("会社IDがありません。ログインしてください。")
+        setLoading(false)
+        return
+      }
+
       try {
         setLoading(true)
+        console.log("データを読み込み中...", { companyId: userProfile.company_id })
+
         const [storedThemes, storedParticipants, storedMinutes] = await Promise.all([
-          getThemes(),
-          getParticipants(),
-          getMinutes(),
+          getThemes(userProfile.company_id),
+          getParticipants(userProfile.company_id),
+          getMinutes(userProfile.company_id),
         ])
+
+        console.log("データ読み込み完了:", {
+          themes: storedThemes.length,
+          participants: storedParticipants.length,
+          minutes: storedMinutes.length,
+        })
 
         setThemes(storedThemes)
         setParticipants(storedParticipants)
@@ -66,20 +82,31 @@ export default function SearchPage() {
       }
     }
 
-    loadData()
-  }, [toast]) // toastを依存配列に追加
+    if (userProfile) {
+      loadData()
+    }
+  }, [userProfile, toast]) // userProfileを依存配列に追加
 
   // 検索処理
   const handleSearch = async () => {
+    if (!userProfile?.company_id) {
+      toast({
+        title: "エラー",
+        description: "認証が必要です。ログインしてください。",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setLoading(true)
       let results: Minute[] = []
 
       // キーワード検索がある場合
       if (keyword.trim()) {
-        results = await searchMinutes(keyword.trim())
+        results = await searchMinutes(keyword.trim(), userProfile.company_id)
       } else {
-        results = await getMinutes()
+        results = await getMinutes(userProfile.company_id)
       }
 
       // テーマでフィルタリング
@@ -115,10 +142,19 @@ export default function SearchPage() {
 
   // 議事録削除処理
   const handleDeleteMinute = async (minuteId: string, title: string) => {
+    if (!userProfile?.company_id) {
+      toast({
+        title: "エラー",
+        description: "認証が必要です。ログインしてください。",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setDeletingId(minuteId)
 
-      const success = await deleteMinute(minuteId)
+      const success = await deleteMinute(minuteId, userProfile.company_id)
 
       if (success) {
         // 検索結果から削除された議事録を除外
@@ -194,6 +230,19 @@ export default function SearchPage() {
     )
 
     return [...priorityKeywords, ...Array.from(keywords).filter((k) => !priorityKeywords.includes(k))].slice(0, 5)
+  }
+
+  // ユーザープロファイルがロードされていない場合のメッセージ
+  if (!userProfile) {
+    return (
+      <div className="container mx-auto">
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <p>認証が必要です。ログインしてください。</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {

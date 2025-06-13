@@ -21,6 +21,9 @@ export type Theme = {
   name: string
   category: string
   description: string
+  background?: string | null // 追加
+  purpose?: string | null // 追加
+  reference?: string | null // references → reference に変更
   participants: string[]
   participant_roles?: { [participantId: string]: string } // 参加者ごとの役割
   created_at?: string
@@ -28,12 +31,18 @@ export type Theme = {
 }
 
 // 参加者関連の関数
-export async function getParticipants(): Promise<Participant[]> {
+export async function getParticipants(companyId?: string): Promise<Participant[]> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return []
+  }
+
   try {
     // 参加者とその参加テーマを取得
     const { data: participants, error: participantsError } = await supabase
       .from("participants")
       .select("*")
+      .eq("company_id", companyId)
       .order("name")
 
     if (participantsError) throw participantsError
@@ -43,10 +52,19 @@ export async function getParticipants(): Promise<Participant[]> {
       participants.map(async (participant) => {
         const { data: themeParticipants, error: themeError } = await supabase
           .from("theme_participants")
-          .select("theme_id")
+          .select("theme_id, role")
           .eq("participant_id", participant.id)
+          .eq("company_id", companyId) // company_idでフィルタリング
 
         if (themeError) throw themeError
+
+        // テーマごとの役割を設定
+        const themeRoles: { [themeId: string]: string } = {}
+        themeParticipants.forEach((tp) => {
+          if (tp.role) {
+            themeRoles[tp.theme_id] = tp.role
+          }
+        })
 
         return {
           id: participant.id,
@@ -55,7 +73,7 @@ export async function getParticipants(): Promise<Participant[]> {
           role: participant.role || "",
           department: participant.department || "",
           themes: themeParticipants.map((tp) => tp.theme_id),
-          theme_roles: {}, // 初期化
+          theme_roles: themeRoles,
           created_at: participant.created_at,
           updated_at: participant.updated_at,
         }
@@ -71,8 +89,17 @@ export async function getParticipants(): Promise<Participant[]> {
 
 export async function addParticipant(
   participant: Omit<Participant, "id" | "themes" | "theme_roles">,
+  companyId?: string,
 ): Promise<Participant | null> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return null
+  }
+
   try {
+    console.log("Supabase client status:", supabase ? "Connected" : "Not connected")
+    console.log("Adding participant to database:", participant)
+
     const { data, error } = await supabase
       .from("participants")
       .insert({
@@ -80,30 +107,53 @@ export async function addParticipant(
         position: participant.position,
         role: participant.role,
         department: participant.department,
+        company_id: companyId,
       })
       .select()
       .single()
 
-    if (error) throw error
+    console.log("Supabase insert response:", { data, error })
 
-    return {
+    if (error) {
+      console.error("Supabase error details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+      throw error
+    }
+
+    if (!data) {
+      throw new Error("No data returned from insert operation")
+    }
+
+    const result = {
       id: data.id,
       name: data.name,
       position: data.position || "",
       role: data.role || "",
       department: data.department || "",
       themes: [],
-      theme_roles: {}, // 初期化
+      theme_roles: {},
       created_at: data.created_at,
       updated_at: data.updated_at,
     }
+
+    console.log("Successfully created participant:", result)
+    return result
   } catch (error) {
     console.error("Error adding participant:", error)
     return null
   }
 }
 
-export async function updateParticipant(participant: Participant): Promise<boolean> {
+export async function updateParticipant(participant: Participant, companyId?: string): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
     const { error } = await supabase
       .from("participants")
@@ -114,6 +164,7 @@ export async function updateParticipant(participant: Participant): Promise<boole
         department: participant.department,
       })
       .eq("id", participant.id)
+      .eq("company_id", companyId)
 
     if (error) throw error
     return true
@@ -123,9 +174,14 @@ export async function updateParticipant(participant: Participant): Promise<boole
   }
 }
 
-export async function deleteParticipant(id: string): Promise<boolean> {
+export async function deleteParticipant(id: string, companyId?: string): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
-    const { error } = await supabase.from("participants").delete().eq("id", id)
+    const { error } = await supabase.from("participants").delete().eq("id", id).eq("company_id", companyId)
 
     if (error) throw error
     return true
@@ -136,10 +192,19 @@ export async function deleteParticipant(id: string): Promise<boolean> {
 }
 
 // テーマ関連の関数
-export async function getThemes(): Promise<Theme[]> {
+export async function getThemes(companyId?: string): Promise<Theme[]> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return []
+  }
+
   try {
     // テーマとその参加者を取得
-    const { data: themes, error: themesError } = await supabase.from("themes").select("*").order("name")
+    const { data: themes, error: themesError } = await supabase
+      .from("themes")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("name")
 
     if (themesError) throw themesError
 
@@ -150,6 +215,7 @@ export async function getThemes(): Promise<Theme[]> {
           .from("theme_participants")
           .select("participant_id, role")
           .eq("theme_id", theme.id)
+          .eq("company_id", companyId) // company_idでフィルタリング
 
         if (participantError) throw participantError
 
@@ -163,6 +229,9 @@ export async function getThemes(): Promise<Theme[]> {
           name: theme.name,
           category: theme.category || "",
           description: theme.description || "",
+          background: theme.background || null, // 追加
+          purpose: theme.purpose || null, // 追加
+          reference: theme.reference || null, // references → reference に変更
           participants: themeParticipants.map((tp) => tp.participant_id),
           participant_roles: participantRoles,
           created_at: theme.created_at,
@@ -178,7 +247,15 @@ export async function getThemes(): Promise<Theme[]> {
   }
 }
 
-export async function addTheme(theme: Omit<Theme, "id" | "participants" | "participant_roles">): Promise<Theme | null> {
+export async function addTheme(
+  theme: Omit<Theme, "id" | "participants" | "participant_roles">,
+  companyId?: string,
+): Promise<Theme | null> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return null
+  }
+
   try {
     console.log("Adding theme to Supabase:", theme)
 
@@ -188,6 +265,10 @@ export async function addTheme(theme: Omit<Theme, "id" | "participants" | "parti
         name: theme.name,
         category: theme.category,
         description: theme.description,
+        background: theme.background, // 追加
+        purpose: theme.purpose, // 追加
+        reference: theme.reference, // references → reference に変更
+        company_id: companyId,
       })
       .select()
       .single()
@@ -208,6 +289,9 @@ export async function addTheme(theme: Omit<Theme, "id" | "participants" | "parti
       name: data.name,
       category: data.category || "",
       description: data.description || "",
+      background: data.background || null, // 追加
+      purpose: data.purpose || null, // 追加
+      reference: data.reference || null, // references → reference に変更
       participants: [],
       participant_roles: {}, // 初期化
       created_at: data.created_at,
@@ -219,7 +303,12 @@ export async function addTheme(theme: Omit<Theme, "id" | "participants" | "parti
   }
 }
 
-export async function updateTheme(theme: Theme): Promise<boolean> {
+export async function updateTheme(theme: Theme, companyId?: string): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
     const { error } = await supabase
       .from("themes")
@@ -227,8 +316,12 @@ export async function updateTheme(theme: Theme): Promise<boolean> {
         name: theme.name,
         category: theme.category,
         description: theme.description,
+        background: theme.background, // 追加
+        purpose: theme.purpose, // 追加
+        reference: theme.reference, // references → reference に変更
       })
       .eq("id", theme.id)
+      .eq("company_id", companyId)
 
     if (error) throw error
     return true
@@ -238,9 +331,14 @@ export async function updateTheme(theme: Theme): Promise<boolean> {
   }
 }
 
-export async function deleteTheme(id: string): Promise<boolean> {
+export async function deleteTheme(id: string, companyId?: string): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
-    const { error } = await supabase.from("themes").delete().eq("id", id)
+    const { error } = await supabase.from("themes").delete().eq("id", id).eq("company_id", companyId)
 
     if (error) throw error
     return true
@@ -255,7 +353,13 @@ export async function addParticipantToTheme(
   themeId: string,
   participantId: string,
   role = "一般参加者",
+  companyId?: string,
 ): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
     console.log(`Adding participant ${participantId} to theme ${themeId} with role ${role}`)
 
@@ -265,6 +369,7 @@ export async function addParticipantToTheme(
       .select("id")
       .eq("theme_id", themeId)
       .eq("participant_id", participantId)
+      .eq("company_id", companyId) // company_idでフィルタリング
       .maybeSingle()
 
     if (checkError) {
@@ -274,7 +379,11 @@ export async function addParticipantToTheme(
 
     // 既に存在する場合は役割を更新
     if (existing) {
-      const { error: updateError } = await supabase.from("theme_participants").update({ role }).eq("id", existing.id)
+      const { error: updateError } = await supabase
+        .from("theme_participants")
+        .update({ role })
+        .eq("id", existing.id)
+        .eq("company_id", companyId) // company_idでフィルタリング
 
       if (updateError) {
         console.error("Error updating participant role:", updateError)
@@ -290,6 +399,7 @@ export async function addParticipantToTheme(
       theme_id: themeId,
       participant_id: participantId,
       role,
+      company_id: companyId, // company_idを設定
     })
 
     if (error) {
@@ -305,13 +415,23 @@ export async function addParticipantToTheme(
   }
 }
 
-export async function removeParticipantFromTheme(themeId: string, participantId: string): Promise<boolean> {
+export async function removeParticipantFromTheme(
+  themeId: string,
+  participantId: string,
+  companyId?: string,
+): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
     const { error } = await supabase
       .from("theme_participants")
       .delete()
       .eq("theme_id", themeId)
       .eq("participant_id", participantId)
+      .eq("company_id", companyId) // company_idでフィルタリング
 
     if (error) throw error
     return true
@@ -322,7 +442,12 @@ export async function removeParticipantFromTheme(themeId: string, participantId:
 }
 
 // getParticipantsByTheme関数を更新して役割情報も取得
-export async function getParticipantsByTheme(themeId: string): Promise<Participant[]> {
+export async function getParticipantsByTheme(themeId: string, companyId?: string): Promise<Participant[]> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return []
+  }
+
   try {
     const { data, error } = await supabase
       .from("theme_participants")
@@ -340,6 +465,7 @@ export async function getParticipantsByTheme(themeId: string): Promise<Participa
         )
       `)
       .eq("theme_id", themeId)
+      .eq("company_id", companyId) // company_idでフィルタリング
 
     if (error) throw error
 
@@ -360,13 +486,19 @@ export async function getParticipantsByTheme(themeId: string): Promise<Participa
   }
 }
 
-export async function getParticipantsNotInTheme(themeId: string): Promise<Participant[]> {
+export async function getParticipantsNotInTheme(themeId: string, companyId?: string): Promise<Participant[]> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return []
+  }
+
   try {
     // まず、テーマに参加している参加者のIDを取得
     const { data: themeParticipants, error: themeError } = await supabase
       .from("theme_participants")
       .select("participant_id")
       .eq("theme_id", themeId)
+      .eq("company_id", companyId) // company_idでフィルタリング
 
     if (themeError) throw themeError
 
@@ -376,6 +508,7 @@ export async function getParticipantsNotInTheme(themeId: string): Promise<Partic
     const { data: allParticipants, error: participantsError } = await supabase
       .from("participants")
       .select("*")
+      .eq("company_id", companyId)
       .order("name")
 
     if (participantsError) throw participantsError
@@ -407,13 +540,20 @@ export async function updateParticipantRoleInTheme(
   themeId: string,
   participantId: string,
   role: string,
+  companyId?: string,
 ): Promise<boolean> {
+  if (!companyId) {
+    console.error("認証が必要です")
+    return false
+  }
+
   try {
     const { error } = await supabase
       .from("theme_participants")
       .update({ role })
       .eq("theme_id", themeId)
       .eq("participant_id", participantId)
+      .eq("company_id", companyId) // company_idでフィルタリング
 
     if (error) throw error
     return true
@@ -425,7 +565,5 @@ export async function updateParticipantRoleInTheme(
 
 // 参加者名を取得するヘルパー関数
 export function getParticipantName(participantId: string): string {
-  // この関数は同期的に呼ばれるため、キャッシュされたデータを使用する必要があります
-  // 実際のアプリケーションでは、参加者データをコンテキストやストアで管理することを推奨します
-  return `参加者${participantId.slice(-4)}`
-}
+// この関数は同期的に呼ばれるため、キャッシュされたデータを使用する必要があります
+// 実際のアプリケーション

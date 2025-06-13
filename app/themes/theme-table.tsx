@@ -1,100 +1,98 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Edit, Eye, PlusCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Edit, Trash2 } from "lucide-react"
 import Link from "next/link"
-import { getThemes, type Theme } from "@/lib/supabase-storage"
+import { useState } from "react"
+import { useToast } from "@/components/ui/use-toast"
+import { deleteTheme, type Theme } from "@/lib/supabase-storage"
+import { useAuth } from "@/lib/auth-context" // useAuthをインポート
 
-export function ThemeTable() {
-  const [themes, setThemes] = useState<Theme[]>([])
-  const [loading, setLoading] = useState(true)
+interface ThemeTableProps {
+  themes: Theme[]
+}
 
-  useEffect(() => {
-    // Supabaseからテーマを取得
-    const loadThemes = async () => {
+export function ThemeTable({ themes }: ThemeTableProps) {
+  const { toast } = useToast()
+  const { userProfile } = useAuth() // useAuthを使用して会社IDを取得
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+
+  const handleDelete = async (id: string, name: string) => {
+    if (confirm(`テーマ「${name}」を削除してもよろしいですか？`)) {
+      setIsDeleting(id)
       try {
-        setLoading(true)
-        const storedThemes = await getThemes()
-        setThemes(storedThemes)
+        // 会社IDを引数として渡す
+        const success = await deleteTheme(id, userProfile?.company_id)
+        if (success) {
+          toast({
+            title: "削除完了",
+            description: `テーマ「${name}」を削除しました。`,
+          })
+          // ページをリロードして最新のデータを表示
+          window.location.reload()
+        } else {
+          throw new Error("削除に失敗しました")
+        }
       } catch (error) {
-        console.error("Failed to load themes:", error)
-        setThemes([])
+        console.error("Failed to delete theme:", error)
+        toast({
+          title: "エラー",
+          description: "テーマの削除に失敗しました。",
+          variant: "destructive",
+        })
       } finally {
-        setLoading(false)
+        setIsDeleting(null)
       }
     }
-
-    loadThemes()
-  }, [])
-
-  if (loading) {
-    return <div className="text-center py-4">テーマを読み込み中...</div>
   }
 
   return (
-    <div className="rounded-md border">
+    <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>テーマ名</TableHead>
             <TableHead>カテゴリ</TableHead>
-            <TableHead className="hidden md:table-cell">説明</TableHead>
-            <TableHead className="hidden md:table-cell">作成日</TableHead>
+            <TableHead>説明</TableHead>
+            <TableHead>参加者数</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {themes.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
-                テーマがありません。新しいテーマを登録してください。
-                <div className="mt-2">
-                  <Button asChild size="sm">
-                    <Link href="/themes/new">
-                      <PlusCircle className="mr-2 h-4 w-4" />
-                      新規テーマ登録
-                    </Link>
-                  </Button>
-                </div>
+          {themes.map((theme) => (
+            <TableRow key={theme.id}>
+              <TableCell className="font-medium">
+                <Link href={`/themes/${theme.id}`} className="hover:underline text-primary">
+                  {theme.name}
+                </Link>
+              </TableCell>
+              <TableCell>{theme.category}</TableCell>
+              <TableCell className="max-w-xs truncate">{theme.description}</TableCell>
+              <TableCell>{theme.participants.length}</TableCell>
+              <TableCell className="text-right space-x-2">
+                <Button variant="outline" size="icon" asChild>
+                  <Link href={`/themes/${theme.id}/edit`}>
+                    <Edit className="h-4 w-4" />
+                    <span className="sr-only">編集</span>
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleDelete(theme.id, theme.name)}
+                  disabled={isDeleting === theme.id}
+                >
+                  {isDeleting === theme.id ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  <span className="sr-only">削除</span>
+                </Button>
               </TableCell>
             </TableRow>
-          ) : (
-            themes.map((theme) => (
-              <TableRow key={theme.id}>
-                <TableCell className="font-medium">
-                  <Link href={`/themes/${theme.id}`} className="hover:underline">
-                    {theme.name}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{theme.category}</Badge>
-                </TableCell>
-                <TableCell className="hidden md:table-cell max-w-xs truncate">{theme.description}</TableCell>
-                <TableCell className="hidden md:table-cell">
-                  {theme.created_at ? new Date(theme.created_at).toLocaleDateString() : ""}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" asChild>
-                      <Link href={`/themes/${theme.id}`}>
-                        <Eye className="h-4 w-4" />
-                        <span className="sr-only">詳細</span>
-                      </Link>
-                    </Button>
-                    <Button variant="ghost" size="icon" asChild>
-                      <Link href={`/themes/${theme.id}/edit`}>
-                        <Edit className="h-4 w-4" />
-                        <span className="sr-only">編集</span>
-                      </Link>
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
-          )}
+          ))}
         </TableBody>
       </Table>
     </div>

@@ -11,26 +11,32 @@ import { AlertTriangle, CheckCircle, Eye, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
 import { getEscalationsByCategory, confirmEscalation, type EscalationItem } from "@/lib/supabase-escalations"
+import { useAuth } from "@/lib/auth-context"
 
 export default function EscalationPage() {
   const { toast } = useToast()
+  const { userProfile } = useAuth()
   const [activeTab, setActiveTab] = useState("technical")
   const [technicalEscalations, setTechnicalEscalations] = useState<EscalationItem[]>([])
   const [businessEscalations, setBusinessEscalations] = useState<EscalationItem[]>([])
   const [personnelEscalations, setPersonnelEscalations] = useState<EscalationItem[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // エスカレーション情報の取得
   const loadEscalations = async () => {
     try {
       setRefreshing(true)
+      setError(null)
+
+      const companyId = userProfile?.company_id
 
       // 各カテゴリのエスカレーション情報を並列取得
       const [technical, business, personnel] = await Promise.all([
-        getEscalationsByCategory("technical"),
-        getEscalationsByCategory("business"),
-        getEscalationsByCategory("personnel"),
+        getEscalationsByCategory("technical", companyId),
+        getEscalationsByCategory("business", companyId),
+        getEscalationsByCategory("personnel", companyId),
       ])
 
       console.log("取得したエスカレーション情報:", { technical, business, personnel })
@@ -40,25 +46,33 @@ export default function EscalationPage() {
       setPersonnelEscalations(personnel)
     } catch (error) {
       console.error("Failed to load escalations:", error)
-      toast({
-        title: "エラー",
-        description: "エスカレーション情報の読み込みに失敗しました",
-        variant: "destructive",
-      })
+      setError("エスカレーション情報の読み込みに失敗しました")
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
   }
 
+  // エラーがある場合にトーストを表示
+  useEffect(() => {
+    if (error) {
+      toast({
+        title: "エラー",
+        description: error,
+        variant: "destructive",
+      })
+    }
+  }, [error, toast])
+
   useEffect(() => {
     loadEscalations()
-  }, [])
+  }, [userProfile])
 
   // エスカレーション確認処理
   const handleConfirm = async (id: string, category: "technical" | "business" | "personnel") => {
     try {
-      const success = await confirmEscalation(id)
+      const companyId = userProfile?.company_id
+      const success = await confirmEscalation(id, companyId)
 
       if (success) {
         toast({
@@ -75,15 +89,11 @@ export default function EscalationPage() {
           setPersonnelEscalations(personnelEscalations.filter((e) => e.id !== id))
         }
       } else {
-        throw new Error("確認処理に失敗しました")
+        setError("確認処理に失敗しました")
       }
     } catch (error) {
       console.error("Failed to confirm escalation:", error)
-      toast({
-        title: "エラー",
-        description: "確認処理に失敗しました",
-        variant: "destructive",
-      })
+      setError("確認処理に失敗しました")
     }
   }
 

@@ -10,7 +10,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ArrowLeft, Send, Bot, User, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
-import { getMinutes, type Minute } from "@/lib/local-storage"
 
 // メッセージの型定義
 type Message = {
@@ -25,21 +24,15 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
-      content: "こんにちは！議事録アシスタントです。過去の議事録について質問があればお気軽にどうぞ。",
+      content:
+        "こんにちは！AI議事録アシスタントです。過去の議事録について何でもお聞きください。自然な言葉で質問していただけます。",
       role: "assistant",
       timestamp: new Date(),
     },
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [minutes, setMinutes] = useState<Minute[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  // 議事録データの取得
-  useEffect(() => {
-    const storedMinutes = getMinutes()
-    setMinutes(storedMinutes)
-  }, [])
 
   // 自動スクロール
   useEffect(() => {
@@ -61,42 +54,55 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const currentInput = input
     setInput("")
     setIsLoading(true)
 
-    // 回答生成を遅延させてローディング効果を出す
-    setTimeout(() => {
-      try {
-        const response = generateResponse(input, minutes)
+    try {
+      // AI APIを呼び出し
+      const response = await fetch("/api/chat-minutes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question: currentInput,
+        }),
+      })
 
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: response,
-          role: "assistant",
-          timestamp: new Date(),
-        }
+      const data = await response.json()
 
-        setMessages((prev) => [...prev, assistantMessage])
-      } catch (error) {
-        console.error("Failed to generate response:", error)
-        toast({
-          title: "エラー",
-          description: "回答の生成に失敗しました",
-          variant: "destructive",
-        })
-
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: "申し訳ありません。回答の生成中にエラーが発生しました。",
-          role: "assistant",
-          timestamp: new Date(),
-        }
-
-        setMessages((prev) => [...prev, errorMessage])
-      } finally {
-        setIsLoading(false)
+      if (!response.ok) {
+        throw new Error(data.error || "APIエラーが発生しました")
       }
-    }, 1000)
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: data.response,
+        role: "assistant",
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      console.error("Failed to generate response:", error)
+      toast({
+        title: "エラー",
+        description: error instanceof Error ? error.message : "回答の生成に失敗しました",
+        variant: "destructive",
+      })
+
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "申し訳ありません。回答の生成中にエラーが発生しました。しばらく時間をおいて再度お試しください。",
+        role: "assistant",
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // チャットをクリア
@@ -104,7 +110,8 @@ export default function ChatPage() {
     setMessages([
       {
         id: "welcome",
-        content: "こんにちは！議事録アシスタントです。過去の議事録について質問があればお気軽にどうぞ。",
+        content:
+          "こんにちは！AI議事録アシスタントです。過去の議事録について何でもお聞きください。自然な言葉で質問していただけます。",
         role: "assistant",
         timestamp: new Date(),
       },
@@ -120,7 +127,7 @@ export default function ChatPage() {
             戻る
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">議事録チャット</h1>
+        <h1 className="text-3xl font-bold tracking-tight">AI議事録チャット</h1>
         <Button variant="ghost" size="sm" onClick={handleClearChat} className="ml-auto">
           <RefreshCw className="mr-2 h-4 w-4" />
           チャットをクリア
@@ -129,8 +136,10 @@ export default function ChatPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>議事録アシスタント</CardTitle>
-          <CardDescription>過去の議事録に基づいて質問に回答します。</CardDescription>
+          <CardTitle>AI議事録アシスタント</CardTitle>
+          <CardDescription>
+            AIが過去の議事録を分析して質問に回答します。自然な言葉で何でもお聞きください。
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4 h-[60vh] overflow-y-auto p-4">
@@ -185,6 +194,7 @@ export default function ChatPage() {
                       <div className="h-2 w-2 rounded-full bg-muted-foreground/30 animate-bounce delay-75"></div>
                       <div className="h-2 w-2 rounded-full bg-muted-foreground/30 animate-bounce delay-150"></div>
                     </div>
+                    <div className="text-xs text-muted-foreground mt-1">AIが回答を生成中...</div>
                   </div>
                 </div>
               </div>
@@ -197,7 +207,7 @@ export default function ChatPage() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="質問を入力してください..."
+              placeholder="議事録について何でもお聞きください..."
               disabled={isLoading}
               className="flex-grow"
             />
@@ -208,6 +218,17 @@ export default function ChatPage() {
           </form>
         </CardFooter>
       </Card>
+
+      <div className="text-sm text-muted-foreground">
+        <p className="mb-2">💡 質問例：</p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>「最新の会議で決まったことは何ですか？」</li>
+          <li>「品質改善に関する議論はありましたか？」</li>
+          <li>「田中さんが参加した会議の内容を教えて」</li>
+          <li>「来週までに完了すべきタスクはありますか？」</li>
+          <li>「不良率について話し合われた内容は？」</li>
+        </ul>
+      </div>
     </div>
   )
 }
@@ -218,42 +239,4 @@ function formatTime(date: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date)
-}
-
-// モックの回答生成関数
-function generateResponse(question: string, minutes: Minute[]): string {
-  // 質問を小文字に変換して検索しやすくする
-  const lowerQuestion = question.toLowerCase()
-
-  // 特定の質問パターンに対する回答
-  if (lowerQuestion.includes("直近") && lowerQuestion.includes("品質管理会議") && lowerQuestion.includes("決定")) {
-    return "直近の品質管理会議では、検査工程の見直しと作業手順書の改訂が完了することが決定されました。また、月次でのフォローアップ体制を整えることも決定されました。これは社外コンサルタントからの他社事例に基づく提案を受けてのものです。"
-  }
-
-  if (
-    lowerQuestion.includes("アクションアイテム") ||
-    lowerQuestion.includes("次回") ||
-    lowerQuestion.includes("タスク")
-  ) {
-    return "次回のアクションアイテムとして以下が設定されています：\n\n1. 設備メンテナンス頻度の見直しを来週までに完了する（担当：生産管理）\n2. 月次フォローアップ体制の詳細を検討する（担当：工場長）\n3. 次回会議で設備メンテナンスの完了報告と効果検証結果を共有する（担当：生産管理、品質管理）"
-  }
-
-  if (lowerQuestion.includes("不良率") || lowerQuestion.includes("改善") || lowerQuestion.includes("効果")) {
-    return "検査工程の見直しと作業手順書の改訂により、不良率が15%減少したという効果が報告されています。設備メンテナンス頻度の見直しについては来週完了予定で、さらなる改善が期待されています。"
-  }
-
-  if (lowerQuestion.includes("参加者") || lowerQuestion.includes("出席者") || lowerQuestion.includes("誰")) {
-    return "直近の品質管理会議の参加者は、工場長の山田太郎さんと品質管理責任者の佐藤次郎さんでした。"
-  }
-
-  if (lowerQuestion.includes("安全") || lowerQuestion.includes("衛生")) {
-    return "安全衛生委員会では、新しい作業手順が安全チェックリストに基づいて確認済みであることが報告されています。具体的な安全対策については、次回の安全衛生委員会で詳細が議論される予定です。"
-  }
-
-  if (lowerQuestion.includes("他社") || lowerQuestion.includes("事例")) {
-    return "社外コンサルタントから共有された他社事例では、品質改善施策において定期的なフォローアップが重要であることが強調されています。これを受けて、月次でのフォローアップ体制を整えることが決定されました。"
-  }
-
-  // 一般的な質問に対するフォールバック回答
-  return "申し訳ありません。その質問に対する具体的な情報は見つかりませんでした。別の質問や、より具体的な内容について質問していただけますか？例えば「直近の品質管理会議で決定したことは？」「次回のアクションアイテムは？」などの質問に回答できます。"
 }

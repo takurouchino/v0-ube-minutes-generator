@@ -1,469 +1,359 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeft, Edit, UserPlus, RefreshCw, Plus } from "lucide-react"
+import { Pencil, Plus, ArrowLeft, FileText } from "lucide-react"
 import Link from "next/link"
 import {
   getThemes,
   getParticipantsByTheme,
-  getParticipantsNotInTheme,
-  addParticipantToTheme,
   removeParticipantFromTheme,
-  updateParticipantRoleInTheme,
   type Theme,
   type Participant,
 } from "@/lib/supabase-storage"
-import { useToast } from "@/components/ui/use-toast"
-import { AddParticipantModal } from "@/components/add-participant-modal"
-// ParticipantRoleModalをインポート
-import { ParticipantRoleModal } from "@/components/participant-role-modal"
-// AddParticipantWithRoleModalをインポート
 import { AddParticipantWithRoleModal } from "@/components/add-participant-with-role-modal"
+import { ParticipantRoleModal } from "@/components/participant-role-modal"
+import { useToast } from "@/components/ui/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { useAuth } from "@/lib/auth-context"
 
-export default function ThemeDetailPage({ params }: { params: { id: string } }) {
+export default function ThemeDetailPage() {
+  const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
+  const { userProfile } = useAuth()
+  const themeId = params.id as string
+
   const [theme, setTheme] = useState<Theme | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
-  const [availableParticipants, setAvailableParticipants] = useState<Participant[]>([])
-  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [refreshKey, setRefreshKey] = useState(0) // 強制的に再レンダリングするためのキー
-  const [activeTab, setActiveTab] = useState("current")
-  const [addParticipantModalOpen, setAddParticipantModalOpen] = useState(false)
-
-  // 状態を追加
-  const [roleModalOpen, setRoleModalOpen] = useState(false)
-  const [editingParticipant, setEditingParticipant] = useState<{
-    id: string
-    name: string
-    currentRole: string
-  } | null>(null)
-  // 状態を追加
-  const [addWithRoleModalOpen, setAddWithRoleModalOpen] = useState(false)
-
-  // データを再読み込みする関数
-  const refreshData = () => {
-    setLoading(true)
-    setRefreshKey((prev) => prev + 1)
-    toast({
-      title: "データを更新しています",
-      description: "最新の情報を取得しています...",
-    })
-  }
+  const [isAddParticipantModalOpen, setIsAddParticipantModalOpen] = useState(false)
+  const [isEditRoleModalOpen, setIsEditRoleModalOpen] = useState(false)
+  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; path: string; url: string }>>([])
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadThemeAndParticipants = async () => {
+      if (!userProfile?.company_id) {
+        setError("認証が必要です")
+        setLoading(false)
+        return
+      }
+
       try {
         setLoading(true)
-        const themes = await getThemes()
-        const foundTheme = themes.find((t) => t.id === params.id)
+        // テーマ情報を取得
+        const themes = await getThemes(userProfile.company_id)
+        const currentTheme = themes.find((t) => t.id === themeId)
 
-        if (foundTheme) {
-          setTheme(foundTheme)
-
-          // テーマに参加している参加者を取得
-          const themeParticipants = await getParticipantsByTheme(foundTheme.id)
-          setParticipants(themeParticipants)
-
-          // テーマに参加していない参加者を取得
-          const notInTheme = await getParticipantsNotInTheme(foundTheme.id)
-          setAvailableParticipants(notInTheme)
-        } else {
-          setError("テーマが見つかりませんでした")
-          // 少し待ってからリダイレクト
-          setTimeout(() => router.push("/themes"), 2000)
+        if (!currentTheme) {
+          setError("テーマが見つかりません")
+          setLoading(false)
+          return
         }
-      } catch (err) {
-        console.error("Failed to load theme data:", err)
-        setError("データの読み込みに失敗しました")
+
+        setTheme(currentTheme)
+
+        // 参考資料のJSONをパースしてファイル情報を設定
+        if (currentTheme.reference) {
+          // references → reference に変更
+          try {
+            const filesData = JSON.parse(currentTheme.reference) // references → reference に変更
+            if (Array.isArray(filesData)) {
+              setUploadedFiles(filesData)
+            }
+          } catch (e) {
+            // 既存のテキスト形式の参照情報の場合はそのまま表示
+            console.log("Reference is not in JSON format, keeping as text")
+          }
+        }
+
+        // テーマの参加者を取得
+        const themeParticipants = await getParticipantsByTheme(themeId, userProfile.company_id)
+        setParticipants(themeParticipants)
+        setError(null)
+      } catch (error) {
+        console.error("Failed to load theme details:", error)
+        setError("テーマ情報の読み込みに失敗しました")
       } finally {
         setLoading(false)
       }
     }
 
-    loadData()
-  }, [params.id, router, refreshKey]) // refreshKeyを依存配列に追加
+    if (themeId) {
+      loadThemeAndParticipants()
+    }
+  }, [themeId, userProfile])
 
-  // 参加者の選択状態を切り替え
-  const toggleParticipant = (participantId: string) => {
-    setSelectedParticipants((prev) =>
-      prev.includes(participantId) ? prev.filter((id) => id !== participantId) : [...prev, participantId],
-    )
+  const handleAddParticipant = (newParticipant: Participant) => {
+    setParticipants((prev) => [...prev, newParticipant])
+    toast({
+      title: "参加者を追加しました",
+      description: `${newParticipant.name}をテーマに追加しました。`,
+    })
   }
 
-  // 選択した参加者をテーマに追加
-  const handleAddParticipants = async () => {
-    if (!theme) return
-    if (selectedParticipants.length === 0) {
+  const handleUpdateRole = (participantId: string, newRole: string) => {
+    setParticipants((prev) =>
+      prev.map((p) => {
+        if (p.id === participantId) {
+          return {
+            ...p,
+            theme_roles: { ...p.theme_roles, [themeId]: newRole },
+          }
+        }
+        return p
+      }),
+    )
+    toast({
+      title: "役割を更新しました",
+      description: "参加者の役割を更新しました。",
+    })
+  }
+
+  const handleRemoveParticipant = async (participantId: string, participantName: string) => {
+    if (!userProfile?.company_id) {
       toast({
-        title: "参加者が選択されていません",
-        description: "追加する参加者を選択してください",
+        title: "エラー",
+        description: "認証が必要です",
         variant: "destructive",
       })
       return
     }
 
     try {
-      // 選択した参加者をテーマに追加
-      for (const participantId of selectedParticipants) {
-        await addParticipantToTheme(theme.id, participantId)
-      }
+      setIsDeleting(true)
+      const success = await removeParticipantFromTheme(themeId, participantId, userProfile.company_id)
 
-      toast({
-        title: "参加者を追加しました",
-        description: `${selectedParticipants.length}名の参加者をテーマに追加しました`,
-      })
-
-      // 選択をリセット
-      setSelectedParticipants([])
-      // データを再読み込み
-      refreshData()
-    } catch (error) {
-      console.error("Failed to add participants:", error)
-      toast({
-        title: "エラー",
-        description: "参加者の追加に失敗しました",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // 参加者をテーマから削除
-  const handleRemoveParticipant = async (participantId: string) => {
-    if (!theme) return
-    if (confirm("この参加者をテーマから削除してもよろしいですか？")) {
-      try {
-        await removeParticipantFromTheme(theme.id, participantId)
+      if (success) {
+        setParticipants((prev) => prev.filter((p) => p.id !== participantId))
         toast({
           title: "参加者を削除しました",
-          description: "参加者をテーマから削除しました",
+          description: `${participantName}をテーマから削除しました。`,
         })
-        // データを再読み込み
-        refreshData()
-      } catch (error) {
-        console.error("Failed to remove participant:", error)
-        toast({
-          title: "エラー",
-          description: "参加者の削除に失敗しました",
-          variant: "destructive",
-        })
-      }
-    }
-  }
-
-  // 新規参加者が追加された後の処理
-  const handleParticipantAdded = () => {
-    // データを再読み込み
-    refreshData()
-    // 参加者追加タブに切り替え
-    setActiveTab("add")
-  }
-
-  // 役割編集ボタンのハンドラーを追加
-  const handleEditRole = (participant: Participant) => {
-    const currentRole = participant.theme_roles?.[params.id] || "一般参加者"
-    setEditingParticipant({
-      id: participant.id,
-      name: participant.name,
-      currentRole,
-    })
-    setRoleModalOpen(true)
-  }
-
-  // 役割更新のハンドラーを追加
-  const handleRoleUpdate = async (newRole: string) => {
-    if (!editingParticipant) return
-
-    try {
-      const success = await updateParticipantRoleInTheme(params.id, editingParticipant.id, newRole)
-
-      if (success) {
-        // データを再読み込み
-        refreshData()
-        setEditingParticipant(null)
       } else {
-        throw new Error("役割の更新に失敗しました")
+        throw new Error("Failed to remove participant")
       }
     } catch (error) {
-      console.error("Failed to update role:", error)
+      console.error("Failed to remove participant:", error)
       toast({
         title: "エラー",
-        description: "役割の更新に失敗しました",
+        description: "参加者の削除に失敗しました。",
         variant: "destructive",
       })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
-  // 参加者追加のハンドラーを更新
-  const handleAddParticipantWithRole = async (participantId: string, role: string) => {
-    if (!theme) return
-
-    try {
-      const success = await addParticipantToTheme(theme.id, participantId, role)
-
-      if (success) {
-        toast({
-          title: "参加者を追加しました",
-          description: `参加者をテーマに追加し、役割を「${role}」に設定しました`,
-        })
-        // データを再読み込み
-        refreshData()
-      } else {
-        throw new Error("参加者の追加に失敗しました")
-      }
-    } catch (error) {
-      console.error("Failed to add participant:", error)
-      toast({
-        title: "エラー",
-        description: "参加者の追加に失敗しました",
-        variant: "destructive",
-      })
-    }
+  const openEditRoleModal = (participant: Participant) => {
+    setSelectedParticipant(participant)
+    setIsEditRoleModalOpen(true)
   }
 
   if (loading) {
     return (
-      <div className="container mx-auto flex items-center justify-center h-[50vh]">
-        <p>読み込み中...</p>
+      <div className="container mx-auto">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+        </div>
       </div>
     )
   }
 
-  if (error) {
+  if (error || !theme) {
     return (
-      <div className="container mx-auto flex items-center justify-center h-[50vh]">
-        <div className="text-center">
-          <p className="text-red-500 mb-4">{error}</p>
-          <Button asChild>
-            <Link href="/themes">テーマ一覧に戻る</Link>
+      <div className="container mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-700">{error || "テーマ情報の読み込みに失敗しました"}</p>
+          <Button variant="outline" className="mt-4" onClick={() => router.push("/themes")}>
+            テーマ一覧に戻る
           </Button>
         </div>
       </div>
     )
   }
 
-  if (!theme) {
-    return null
-  }
-
   return (
     <div className="container mx-auto">
       <div className="flex items-center mb-6">
-        <Button variant="ghost" size="sm" asChild className="mr-4">
+        <Button variant="ghost" size="sm" className="mr-2" asChild>
           <Link href="/themes">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 mr-1" />
             戻る
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">{theme.name}</h1>
-        <Button variant="ghost" size="sm" onClick={refreshData} className="ml-auto">
-          <RefreshCw className="mr-2 h-4 w-4" />
-          更新
+        <h1 className="text-3xl font-bold tracking-tight flex-grow">{theme.name}</h1>
+        <Button variant="outline" size="sm" className="mr-2" asChild>
+          <Link href={`/themes/${themeId}/edit`}>
+            <Pencil className="h-4 w-4 mr-1" />
+            編集
+          </Link>
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>テーマ情報</CardTitle>
-              <CardDescription>テーマの基本情報です。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <Card className="md:col-span-3">
+          <CardHeader>
+            <CardTitle>テーマ情報</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h3 className="text-sm font-medium">テーマ名</h3>
-                <p>{theme.name}</p>
+                <dt className="text-sm font-medium text-muted-foreground">カテゴリ</dt>
+                <dd className="mt-1">{theme.category || "未設定"}</dd>
               </div>
-
               <div>
-                <h3 className="text-sm font-medium">カテゴリ</h3>
-                <Badge variant="outline">{theme.category}</Badge>
+                <dt className="text-sm font-medium text-muted-foreground">説明</dt>
+                <dd className="mt-1 whitespace-pre-wrap">{theme.description || "説明はありません"}</dd>
               </div>
-
+              {/* 新しいフィールドを表示 */}
               <div>
-                <h3 className="text-sm font-medium">説明</h3>
-                <p className="text-sm text-muted-foreground">{theme.description}</p>
+                <dt className="text-sm font-medium text-muted-foreground">プロジェクトの背景</dt>
+                <dd className="mt-1 whitespace-pre-wrap">{theme.background || "未設定"}</dd>
               </div>
-
               <div>
-                <h3 className="text-sm font-medium">作成日</h3>
-                <p className="text-sm">{theme.created_at ? new Date(theme.created_at).toLocaleDateString() : "不明"}</p>
+                <dt className="text-sm font-medium text-muted-foreground">目的</dt>
+                <dd className="mt-1 whitespace-pre-wrap">{theme.purpose || "未設定"}</dd>
               </div>
-
-              <div className="pt-2">
-                <Button asChild>
-                  <Link href={`/themes/${theme.id}/edit`}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    編集する
-                  </Link>
-                </Button>
+              <div className="md:col-span-2">
+                <dt className="text-sm font-medium text-muted-foreground">参考資料</dt>
+                {uploadedFiles.length > 0 ? (
+                  <dd className="mt-2">
+                    <ul className="space-y-2">
+                      {uploadedFiles.map((file, index) => (
+                        <li key={index} className="flex items-center p-2 bg-muted rounded-md">
+                          <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
+                          <a
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:underline"
+                          >
+                            {file.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                ) : (
+                  <dd className="mt-1 whitespace-pre-wrap">{theme.reference || "未設定"}</dd> // references → reference に変更
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </dl>
+          </CardContent>
+        </Card>
 
-        <div>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>参加者管理</CardTitle>
-                <CardDescription>このテーマの参加者を管理します。</CardDescription>
+        <Card className="md:col-span-3">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>参加者一覧</CardTitle>
+              <CardDescription>このテーマに参加しているメンバーです</CardDescription>
+            </div>
+            <Button size="sm" onClick={() => setIsAddParticipantModalOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              参加者追加
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {participants.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                参加者がいません。「参加者追加」ボタンから追加してください。
               </div>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-2 mb-4">
-                  <TabsTrigger value="current">現在の参加者</TabsTrigger>
-                  <TabsTrigger value="add">参加者追加</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="current">
-                  {participants.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground">参加者がいません</div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>氏名</TableHead>
-                          <TableHead>基本役割</TableHead>
-                          <TableHead>テーマ内役割</TableHead>
-                          <TableHead></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {participants.map((participant) => (
-                          <TableRow key={participant.id}>
-                            <TableCell className="font-medium">
-                              {participant.name}
-                              <div className="text-xs text-muted-foreground">{participant.position}</div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{participant.role}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{participant.theme_roles?.[params.id] || "一般参加者"}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button variant="ghost" size="sm" onClick={() => handleEditRole(participant)}>
-                                  役割編集
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveParticipant(participant.id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  削除
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="add">
-                  <div className="mb-4">
-                    <Button onClick={() => setAddParticipantModalOpen(true)} className="w-full mb-2">
-                      <Plus className="mr-2 h-4 w-4" />
-                      新規参加者を追加
-                    </Button>
-                    <Button
-                      onClick={() => setAddWithRoleModalOpen(true)}
-                      className="w-full"
-                      disabled={availableParticipants.length === 0}
-                    >
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      既存参加者を役割付きで追加
-                    </Button>
-                  </div>
-
-                  {availableParticipants.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground">
-                      追加できる参加者がいません。
-                      <Button
-                        variant="link"
-                        onClick={() => setAddParticipantModalOpen(true)}
-                        className="ml-2 p-0 h-auto"
-                      >
-                        新しい参加者を登録する
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-4">
-                        <div className="border rounded-md p-4 max-h-[300px] overflow-y-auto">
-                          {availableParticipants.map((participant) => (
-                            <div
-                              key={participant.id}
-                              className="flex items-center space-x-2 py-2 border-b last:border-0"
-                            >
-                              <Checkbox
-                                id={`participant-${participant.id}`}
-                                checked={selectedParticipants.includes(participant.id)}
-                                onCheckedChange={() => toggleParticipant(participant.id)}
-                              />
-                              <div>
-                                <label htmlFor={`participant-${participant.id}`} className="font-medium cursor-pointer">
-                                  {participant.name}
-                                </label>
-                                <div className="text-xs text-muted-foreground">
-                                  {participant.position} - {participant.role}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <Button
-                          onClick={handleAddParticipants}
-                          disabled={selectedParticipants.length === 0}
-                          className="w-full"
-                        >
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          選択した参加者を追加 ({selectedParticipants.length}名)
-                        </Button>
+            ) : (
+              <div className="space-y-4">
+                {participants.map((participant) => (
+                  <div
+                    key={participant.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
+                  >
+                    <div>
+                      <div className="font-medium">{participant.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {participant.position && `${participant.position} | `}
+                        {participant.theme_roles?.[themeId] || "一般参加者"}
                       </div>
-                    </>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditRoleModal(participant)}
+                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                      >
+                        役割変更
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isDeleting}
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                          >
+                            削除
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>参加者を削除しますか？</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {participant.name}をこのテーマから削除します。この操作は取り消せません。
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleRemoveParticipant(participant.id, participant.name)}
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              削除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <AddParticipantModal
-        open={addParticipantModalOpen}
-        onOpenChange={setAddParticipantModalOpen}
-        onParticipantAdded={handleParticipantAdded}
+      {/* 参加者追加モーダル */}
+      <AddParticipantWithRoleModal
+        themeId={themeId}
+        isOpen={isAddParticipantModalOpen}
+        onClose={() => setIsAddParticipantModalOpen(false)}
+        onAddParticipant={handleAddParticipant}
+        existingParticipantIds={participants.map((p) => p.id)}
       />
-      {editingParticipant && (
+
+      {/* 役割編集モーダル */}
+      {selectedParticipant && (
         <ParticipantRoleModal
-          open={roleModalOpen}
-          onOpenChange={setRoleModalOpen}
-          participantName={editingParticipant.name}
-          currentRole={editingParticipant.currentRole}
-          onRoleUpdate={handleRoleUpdate}
+          themeId={themeId}
+          participant={selectedParticipant}
+          isOpen={isEditRoleModalOpen}
+          onClose={() => setIsEditRoleModalOpen(false)}
+          onUpdateRole={handleUpdateRole}
         />
       )}
-      <AddParticipantWithRoleModal
-        open={addWithRoleModalOpen}
-        onOpenChange={setAddWithRoleModalOpen}
-        availableParticipants={availableParticipants}
-        onParticipantAdd={handleAddParticipantWithRole}
-      />
     </div>
   )
 }

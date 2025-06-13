@@ -31,9 +31,11 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
   const [role, setRole] = useState("")
   const [department, setDepartment] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
 
     if (!name.trim()) {
       toast({
@@ -47,6 +49,8 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
     setIsSubmitting(true)
 
     try {
+      console.log("Adding participant:", { name, position, role, department })
+
       // 参加者を追加
       const newParticipant = await addParticipant({
         name,
@@ -85,6 +89,7 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
       }
     } catch (error) {
       console.error("Failed to add participant:", error)
+      setError(error instanceof Error ? error.message : "参加者の追加に失敗しました")
       toast({
         title: "エラー",
         description: "参加者の追加に失敗しました",
@@ -103,6 +108,13 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
             <DialogTitle>新規参加者追加</DialogTitle>
             <DialogDescription>新しい参加者の情報を入力してください。</DialogDescription>
           </DialogHeader>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
+
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="name" className="text-right">

@@ -2,93 +2,123 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ModeToggle } from "@/components/mode-toggle"
-import { FileText, Menu } from "lucide-react"
-import { useState } from "react"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { useAuth } from "@/lib/auth-context"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { LogOut, User } from "lucide-react"
 
-export default function Navbar() {
+export function Navbar() {
   const pathname = usePathname()
-  const [open, setOpen] = useState(false)
+  const { user, userProfile, signOut } = useAuth()
+
+  const routes = [
+    {
+      href: "/",
+      label: "ホーム",
+      active: pathname === "/",
+    },
+    {
+      href: "/themes",
+      label: "テーマ",
+      active: pathname === "/themes",
+    },
+    {
+      href: "/participants",
+      label: "参加者",
+      active: pathname === "/participants",
+    },
+    {
+      href: "/minutes/new",
+      label: "議事録作成",
+      active: pathname === "/minutes/new",
+    },
+    {
+      href: "/todos",
+      label: "ToDo",
+      active: pathname === "/todos",
+    },
+    {
+      href: "/dictionary",
+      label: "辞書",
+      active: pathname === "/dictionary",
+    },
+  ]
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+  }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b bg-background">
-      <div className="container flex h-16 items-center px-4 sm:px-6">
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="mr-4 md:hidden">
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle menu</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[240px] sm:w-[300px]">
-            <nav className="flex flex-col gap-4 py-4">
-              <Link href="/" className="flex items-center gap-2 text-lg font-semibold" onClick={() => setOpen(false)}>
-                <FileText className="h-5 w-5" />
-                議事録ツール
-              </Link>
-              <Link
-                href="/themes"
-                className={`px-3 py-2 rounded-md ${pathname === "/themes" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                テーマ管理
-              </Link>
-              <Link
-                href="/participants"
-                className={`px-3 py-2 rounded-md ${pathname === "/participants" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                参加者マスタ
-              </Link>
-              <Link
-                href="/minutes/new"
-                className={`px-3 py-2 rounded-md ${pathname === "/minutes/new" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                議事録作成
-              </Link>
-              <Link
-                href="/search"
-                className={`px-3 py-2 rounded-md ${pathname === "/search" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                検索・履歴
-              </Link>
-              <Link
-                href="/chat"
-                className={`px-3 py-2 rounded-md ${pathname === "/chat" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                議事録チャット
-              </Link>
-              <Link
-                href="/escalation"
-                className={`px-3 py-2 rounded-md ${pathname === "/escalation" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                エスカレーション
-              </Link>
-              <Link
-                href="/access-control"
-                className={`px-3 py-2 rounded-md ${pathname === "/access-control" ? "bg-muted" : "hover:bg-muted"}`}
-                onClick={() => setOpen(false)}
-              >
-                アクセス権管理
-              </Link>
-            </nav>
-          </SheetContent>
-        </Sheet>
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
-          <FileText className="h-5 w-5" />
-          <span className="hidden md:inline">AI支援型工場現場議事録ツール</span>
-          <span className="md:hidden">議事録ツール</span>
+    <div className="border-b">
+      <div className="flex h-16 items-center px-4">
+        <Link href="/" className="text-xl font-bold">
+          UBE Minutes Generator
         </Link>
-        <div className="ml-auto flex items-center gap-2">
+        <nav className="mx-6 flex items-center space-x-4 lg:space-x-6">
+          {routes.map((route) => (
+            <Link
+              key={route.href}
+              href={route.href}
+              className={cn(
+                "text-sm font-medium transition-colors hover:text-primary",
+                route.active ? "text-black dark:text-white" : "text-muted-foreground",
+              )}
+            >
+              {route.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center space-x-4">
           <ModeToggle />
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback>{userProfile ? getInitials(userProfile.full_name) : "U"}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{userProfile?.full_name || "ユーザー"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">{userProfile?.email || user.email}</p>
+                    {userProfile?.company_name && (
+                      <p className="text-xs leading-none text-muted-foreground">{userProfile.company_name}</p>
+                    )}
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile" className="cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>プロフィール</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>ログアウト</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
-    </header>
+    </div>
   )
 }

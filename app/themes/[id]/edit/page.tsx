@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeft, Save, Plus } from "lucide-react"
+import { ArrowLeft, Save, Plus, Upload, File, X } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
 import {
@@ -24,14 +24,21 @@ import {
   type Participant,
 } from "@/lib/supabase-storage"
 import { AddParticipantModal } from "@/components/add-participant-modal"
+import { useAuth } from "@/lib/auth-context" // useAuthをインポート
+import { supabase } from "@/lib/supabase"
 
 export default function ThemeEditPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { toast } = useToast()
+  const { userProfile } = useAuth() // userProfileを取得
   const [theme, setTheme] = useState<Theme | null>(null)
   const [name, setName] = useState("")
   const [category, setCategory] = useState("")
   const [description, setDescription] = useState("")
+  // 新しいフィールド用のステート追加
+  const [background, setBackground] = useState("")
+  const [purpose, setPurpose] = useState("")
+  const [reference, setReference] = useState("") // references → reference に変更
   const [themeParticipants, setThemeParticipants] = useState<Participant[]>([])
   const [allParticipants, setAllParticipants] = useState<Participant[]>([])
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([])
@@ -39,11 +46,21 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true)
   const [addParticipantModalOpen, setAddParticipantModalOpen] = useState(false)
 
+  // ファイルアップロード関連の状態
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ name: string; path: string; url: string }>>([])
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true)
-        const themes = await getThemes()
+        if (!userProfile?.company_id) {
+          setError("認証が必要です")
+          return
+        }
+
+        const themes = await getThemes(userProfile.company_id)
         const foundTheme = themes.find((t) => t.id === params.id)
 
         if (foundTheme) {
@@ -51,14 +68,32 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
           setName(foundTheme.name)
           setCategory(foundTheme.category)
           setDescription(foundTheme.description)
+          // 新しいフィールドの値をセット
+          setBackground(foundTheme.background || "")
+          setPurpose(foundTheme.purpose || "")
+          setReference(foundTheme.reference || "") // references → reference に変更
+
+          // 参考資料のJSONをパースしてファイル情報を設定
+          if (foundTheme.reference) {
+            // references → reference に変更
+            try {
+              const filesData = JSON.parse(foundTheme.reference) // references → reference に変更
+              if (Array.isArray(filesData)) {
+                setUploadedFiles(filesData)
+              }
+            } catch (e) {
+              // 既存のテキスト形式の参照情報の場合はそのまま表示
+              console.log("Reference is not in JSON format, keeping as text")
+            }
+          }
 
           // テーマに参加している参加者を取得
-          const participants = await getParticipantsByTheme(foundTheme.id)
+          const participants = await getParticipantsByTheme(foundTheme.id, userProfile.company_id)
           setThemeParticipants(participants)
           setSelectedParticipants(participants.map((p) => p.id))
 
           // 全参加者を取得
-          const allParticipants = await getParticipants()
+          const allParticipants = await getParticipants(userProfile.company_id)
           setAllParticipants(allParticipants)
         } else {
           setError("テーマが見つかりませんでした")
@@ -73,7 +108,7 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
     }
 
     loadData()
-  }, [params.id, router])
+  }, [params.id, router, userProfile])
 
   const toggleParticipant = (participantId: string) => {
     setSelectedParticipants((prev) =>
@@ -84,8 +119,9 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
   // 新規参加者が追加された後の処理
   const handleParticipantAdded = async () => {
     try {
+      if (!userProfile?.company_id) return
       // 参加者リストを再読み込み
-      const updatedParticipants = await getParticipants()
+      const updatedParticipants = await getParticipants(userProfile.company_id)
       setAllParticipants(updatedParticipants)
 
       toast({
@@ -97,6 +133,86 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
       toast({
         title: "警告",
         description: "参加者リストの更新に失敗しました。ページを再読み込みしてください。",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // ファイルアップロード処理
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !theme) {
+      return
+    }
+
+    setUploading(true)
+
+    try {
+      const file = e.target.files[0]
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`
+      const filePath = `themes/${theme.id}/reference/${fileName}` // references → reference に変更
+
+      const { error: uploadError } = await supabase.storage.from("theme-reference").upload(filePath, file) // references → reference に変更
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      // 公開URLを取得
+      const { data } = supabase.storage.from("theme-reference").getPublicUrl(filePath) // references → reference に変更
+
+      const newFile = {
+        name: file.name,
+        path: filePath,
+        url: data.publicUrl,
+      }
+
+      setUploadedFiles((prev) => [...prev, newFile])
+
+      toast({
+        title: "ファイルをアップロードしました",
+        description: `${file.name} が正常にアップロードされました`,
+      })
+    } catch (error) {
+      console.error("Failed to upload file:", error)
+      toast({
+        title: "エラー",
+        description: "ファイルのアップロードに失敗しました",
+        variant: "destructive",
+      })
+    } finally {
+      setUploading(false)
+      // ファイル入力をリセット
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
+    }
+  }
+
+  // ファイル削除処理
+  const handleFileDelete = async (index: number) => {
+    try {
+      const fileToDelete = uploadedFiles[index]
+
+      // Supabaseストレージからファイルを削除
+      const { error } = await supabase.storage.from("theme-reference").remove([fileToDelete.path]) // references → reference に変更
+
+      if (error) {
+        throw error
+      }
+
+      // 状態からファイルを削除
+      setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
+
+      toast({
+        title: "ファイルを削除しました",
+        description: `${fileToDelete.name} が正常に削除されました`,
+      })
+    } catch (error) {
+      console.error("Failed to delete file:", error)
+      toast({
+        title: "エラー",
+        description: "ファイルの削除に失敗しました",
         variant: "destructive",
       })
     }
@@ -114,16 +230,22 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
       return
     }
 
-    if (theme) {
+    if (theme && userProfile?.company_id) {
       try {
+        // アップロードされたファイル情報をJSON文字列に変換
+        const referenceJson = JSON.stringify(uploadedFiles)
+
         const updatedTheme: Theme = {
           ...theme,
           name,
           category,
           description,
+          background: background || null,
+          purpose: purpose || null,
+          reference: referenceJson, // references → reference に変更
         }
 
-        const success = await updateTheme(updatedTheme)
+        const success = await updateTheme(updatedTheme, userProfile.company_id)
 
         if (!success) {
           throw new Error("テーマの更新に失敗しました")
@@ -135,14 +257,14 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
         // 削除された参加者を処理
         for (const participantId of currentParticipantIds) {
           if (!selectedParticipants.includes(participantId)) {
-            await removeParticipantFromTheme(theme.id, participantId)
+            await removeParticipantFromTheme(theme.id, participantId, userProfile.company_id)
           }
         }
 
         // 追加された参加者を処理
         for (const participantId of selectedParticipants) {
           if (!currentParticipantIds.includes(participantId)) {
-            await addParticipantToTheme(theme.id, participantId)
+            await addParticipantToTheme(theme.id, participantId, "一般参加者", userProfile.company_id)
           }
         }
 
@@ -220,8 +342,84 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
+                  rows={3}
                 />
+              </div>
+
+              {/* 新しいフィールド: 背景 */}
+              <div className="space-y-2">
+                <Label htmlFor="background">プロジェクトの背景</Label>
+                <Textarea
+                  id="background"
+                  value={background}
+                  onChange={(e) => setBackground(e.target.value)}
+                  placeholder="このプロジェクト/テーマが始まった背景や経緯を入力してください"
+                  rows={3}
+                />
+              </div>
+
+              {/* 新しいフィールド: 目的 */}
+              <div className="space-y-2">
+                <Label htmlFor="purpose">目的</Label>
+                <Textarea
+                  id="purpose"
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                  placeholder="このテーマの目的や達成したい成果を入力してください"
+                  rows={3}
+                />
+              </div>
+
+              {/* 新しいフィールド: 参考資料（ファイルアップロード形式に変更） */}
+              <div className="space-y-2">
+                <Label htmlFor="reference">参考資料</Label> {/* references → reference に変更 */}
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      id="file-upload"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      {uploading ? "アップロード中..." : "ファイルをアップロード"}
+                    </Button>
+                  </div>
+
+                  {/* アップロードされたファイル一覧 */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-sm font-medium">アップロードされたファイル:</p>
+                      <ul className="space-y-2">
+                        {uploadedFiles.map((file, index) => (
+                          <li key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                            <div className="flex items-center">
+                              <File className="h-4 w-4 mr-2 text-muted-foreground" />
+                              <span className="text-sm">{file.name}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleFileDelete(index)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">削除</span>
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

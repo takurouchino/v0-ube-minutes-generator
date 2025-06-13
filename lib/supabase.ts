@@ -1,11 +1,31 @@
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Add this line to re-export the createClient function
+export { createClient }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Make sure we have the environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-// 型定義
+// Create a singleton instance for client-side usage
+let supabaseInstance: ReturnType<typeof createClient> | null = null
+
+export function getSupabaseClient() {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Missing Supabase environment variables")
+  }
+
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey)
+  }
+
+  return supabaseInstance
+}
+
+// Export the supabase client for backward compatibility
+export const supabase = getSupabaseClient()
+
+// Type definitions remain the same
 export type Database = {
   public: {
     Tables: {
@@ -44,6 +64,9 @@ export type Database = {
           name: string
           category: string | null
           description: string | null
+          background: string | null // 追加
+          purpose: string | null // 追加
+          references: string | null // 追加
           created_at: string
           updated_at: string
         }
@@ -52,6 +75,9 @@ export type Database = {
           name: string
           category?: string | null
           description?: string | null
+          background?: string | null // 追加
+          purpose?: string | null // 追加
+          references?: string | null // 追加
           created_at?: string
           updated_at?: string
         }
@@ -60,6 +86,9 @@ export type Database = {
           name?: string
           category?: string | null
           description?: string | null
+          background?: string | null // 追加
+          purpose?: string | null // 追加
+          references?: string | null // 追加
           created_at?: string
           updated_at?: string
         }

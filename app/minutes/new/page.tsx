@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Wand2, Save, RefreshCw } from "lucide-react"
+import { ArrowLeft, Wand2, Save, RefreshCw, ListTodo, ClipboardList } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/use-toast"
@@ -21,10 +21,12 @@ import {
   type Theme,
   type Participant,
 } from "@/lib/supabase-storage"
-import { addMinute, extractKeywords } from "@/lib/supabase-minutes"
+import { saveMinute as addMinute, extractKeywords } from "@/lib/supabase-minutes"
 import { AIDraftModal } from "@/components/ai-draft-modal"
 import { saveMinuteSentences } from "@/lib/supabase-sentences"
 import { generateAndSaveEscalations } from "@/lib/supabase-escalations"
+import { TodoManagementModal } from "@/components/todo-management-modal"
+import { useAuth } from "@/lib/auth-context" // 認証コンテキストをインポート
 
 // LocalStorageのキー
 const DRAFT_STORAGE_KEY = "minutes-draft"
@@ -46,9 +48,50 @@ type DraftData = {
   activeTab: string
 }
 
+// 時間をデータベース形式に変換する関数
+function formatTimeForDatabase(timeString: string): string {
+  if (!timeString || timeString.trim() === "") {
+    return "00:00:00" // デフォルト値
+  }
+
+  try {
+    // HH:MM 形式の場合（標準的なHTML time inputの出力形式）
+    if (/^\d{1,2}:\d{2}$/.test(timeString)) {
+      // 時間と分を抽出
+      const [hours, minutes] = timeString.split(":").map((part) => part.padStart(2, "0"))
+      return `${hours}:${minutes}:00` // 秒を00として追加
+    }
+
+    // HH:MM:SS 形式の場合（既にデータベース形式）
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(timeString)) {
+      // 時間、分、秒を抽出して正規化
+      const [hours, minutes, seconds] = timeString.split(":").map((part) => part.padStart(2, "0"))
+      return `${hours}:${minutes}:${seconds}`
+    }
+
+    // その他の形式の場合、パースを試みる
+    if (timeString.includes(":")) {
+      const parts = timeString.split(":").map((part) => part.trim().padStart(2, "0"))
+      if (parts.length >= 2) {
+        return `${parts[0]}:${parts[1]}:00`
+      }
+    }
+
+    // パースに失敗した場合はデフォルト値
+    console.warn(`不正な時間形式: ${timeString}、デフォルト値を使用します`)
+    return "00:00:00"
+  } catch (error) {
+    console.error(`時間形式の変換中にエラーが発生しました: ${error}`)
+    return "00:00:00"
+  }
+}
+
 export default function NewMinutesPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { userProfile } = useAuth() // 認証情報を取得
+  const companyId = userProfile?.company_id // ユーザーのcompany_idを取得
+
   const [activeTab, setActiveTab] = useState("input")
   const [date, setDate] = useState("")
   const [time, setTime] = useState("")
@@ -59,6 +102,9 @@ export default function NewMinutesPage() {
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [todoModalOpen, setTodoModalOpen] = useState(false)
+  const [newMinute, setNewMinute] = useState<any | null>(null)
+  const [authError, setAuthError] = useState(false) // 認証エラー状態
 
   // 要約情報
   const [summary, setSummary] = useState({
@@ -122,6 +168,7 @@ export default function NewMinutesPage() {
     setSummary({ progress: "", keyPoints: "", decisions: "", actions: "" })
     setParsedSentences([])
     setActiveTab("input")
+    setNewMinute(null)
     toast({
       title: "新規議事録作成",
       description: "新しい議事録の作成を開始しました",
@@ -133,8 +180,19 @@ export default function NewMinutesPage() {
     const loadData = async () => {
       try {
         setLoading(true)
-        const storedThemes = await getThemes()
-        const storedParticipants = await getParticipants()
+
+        // 認証情報がない場合はエラー状態を設定
+        if (!companyId) {
+          console.error("認証情報がありません。ログインしてください。")
+          setAuthError(true)
+          setLoading(false)
+          return
+        }
+
+        // companyIdを渡してテーマと参加者を取得
+        const storedThemes = await getThemes(companyId)
+        const storedParticipants = await getParticipants(companyId)
+
         setThemes(storedThemes)
         setAllParticipants(storedParticipants)
 
@@ -153,7 +211,7 @@ export default function NewMinutesPage() {
     }
 
     loadData()
-  }, [toast])
+  }, [toast, companyId])
 
   // 入力値が変更されたときにドラフトを保存
   useEffect(() => {
@@ -165,9 +223,9 @@ export default function NewMinutesPage() {
   // テーマが選択されたときに参加者を更新
   useEffect(() => {
     const loadThemeParticipants = async () => {
-      if (selectedThemeId) {
+      if (selectedThemeId && companyId) {
         try {
-          const participants = await getParticipantsByTheme(selectedThemeId)
+          const participants = await getParticipantsByTheme(selectedThemeId, companyId)
           setThemeParticipants(participants)
           // デフォルトですべての参加者を選択
           setSelectedParticipants(participants.map((p) => p.id))
@@ -183,7 +241,7 @@ export default function NewMinutesPage() {
     }
 
     loadThemeParticipants()
-  }, [selectedThemeId])
+  }, [selectedThemeId, companyId])
 
   // 参加者の選択状態を切り替え
   const toggleParticipant = (participantId: string) => {
@@ -385,10 +443,29 @@ export default function NewMinutesPage() {
 
   // 議事録を保存する処理
   const handleSaveMinutes = async () => {
-    if (!selectedThemeId || !date || !time || !rawText.trim()) {
+    if (!selectedThemeId || !date || !rawText.trim()) {
       toast({
         title: "入力エラー",
         description: "テーマ、日時、議事録内容は必須項目です。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // 時間のバリデーションを強化
+    if (!time || time.trim() === "") {
+      toast({
+        title: "入力エラー",
+        description: "会議時間を入力してください。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!companyId) {
+      toast({
+        title: "認証エラー",
+        description: "ログインしてください。",
         variant: "destructive",
       })
       return
@@ -412,25 +489,44 @@ export default function NewMinutesPage() {
         actions: summary.actions,
       })
 
-      const newMinute = await addMinute({
+      // 時間をデータベース形式に変換
+      const dbTime = formatTimeForDatabase(time)
+
+      console.log("元の時間値:", time)
+      console.log("データベース用に変換された時間値:", dbTime)
+      console.log("時間形式が正しいか確認:", /^\d{1,2}:\d{2}:\d{2}$/.test(dbTime))
+      console.log("保存する議事録データ:", {
         theme_id: selectedThemeId,
         title: selectedTheme?.name || "無題の会議",
         date,
-        time,
-        content: rawText,
-        summary_progress: summary.progress || "特記事項なし",
-        summary_key_points: summary.keyPoints || "特記事項なし",
-        summary_decisions: summary.decisions || "特記事項なし",
-        summary_actions: summary.actions || "特記事項なし",
-        keywords,
-        status: "draft",
-        author: "現在のユーザー",
-        participants: selectedParticipants,
+        time: dbTime,
+        content: rawText.substring(0, 50) + "...", // 長すぎるので省略
       })
 
-      if (!newMinute) {
+      const savedMinute = await addMinute(
+        {
+          theme_id: selectedThemeId,
+          title: selectedTheme?.name || "無題の会議",
+          date,
+          time: dbTime, // データベース形式の時間を使用
+          content: rawText,
+          summary_progress: summary.progress || "特記事項なし",
+          summary_key_points: summary.keyPoints || "特記事項なし",
+          summary_decisions: summary.decisions || "特記事項なし",
+          summary_actions: summary.actions || "特記事項なし",
+          keywords,
+          status: "draft",
+          author: "現在のユーザー",
+          participants: selectedParticipants,
+        },
+        companyId,
+      ) // companyIdを渡す
+
+      if (!savedMinute) {
         throw new Error("議事録の保存に失敗しました")
       }
+
+      setNewMinute(savedMinute)
 
       // 発言分離データが存在する場合はSupabaseに保存
       if (parsedSentences.length > 0) {
@@ -441,9 +537,9 @@ export default function NewMinutesPage() {
           sentence_order: index + 1,
         }))
 
-        console.log("Saving sentences to Supabase:", sentencesToSave)
+        console.log("Saving sentences to Supabase:", sentencesToSave.length, "sentences")
 
-        const sentencesSaved = await saveMinuteSentences(newMinute.id, sentencesToSave)
+        const sentencesSaved = await saveMinuteSentences(savedMinute.id, sentencesToSave, companyId) // companyIdを渡す
 
         if (sentencesSaved) {
           console.log("発言データの保存に成功しました")
@@ -454,7 +550,7 @@ export default function NewMinutesPage() {
 
       // エスカレーション情報を自動生成・保存
       try {
-        const escalationCount = await generateAndSaveEscalations(newMinute.id, selectedThemeId, rawText)
+        const escalationCount = await generateAndSaveEscalations(savedMinute.id, selectedThemeId, rawText, companyId) // companyIdを渡す
 
         if (escalationCount > 0) {
           toast({
@@ -468,7 +564,7 @@ export default function NewMinutesPage() {
         // エスカレーション生成に失敗しても議事録保存は成功とする
       }
 
-      console.log("保存された議事録:", newMinute)
+      console.log("保存された議事録:", savedMinute)
 
       // 保存成功後にドラフトをクリア
       clearDraft()
@@ -477,6 +573,21 @@ export default function NewMinutesPage() {
         title: "議事録を保存しました",
         description: `議事録${parsedSentences.length > 0 ? "と発言データ" : ""}が正常に保存されました。検索・履歴画面で確認できます。`,
       })
+
+      // ToDo管理モーダルを開くかどうかを確認
+      if (
+        summary.actions &&
+        (summary.actions.includes("次回") ||
+          summary.actions.includes("担当") ||
+          summary.actions.includes("アクション") ||
+          summary.actions.includes("タスク"))
+      ) {
+        const shouldOpenTodoModal = confirm("アクションアイテムを抽出してToDo管理に登録しますか？")
+        if (shouldOpenTodoModal) {
+          setTodoModalOpen(true)
+          return // router.pushを実行せずにモーダルを開く
+        }
+      }
 
       router.push("/search")
     } catch (error) {
@@ -489,6 +600,210 @@ export default function NewMinutesPage() {
     }
   }
 
+  // ToDo管理モーダルを開く
+  const handleOpenTodoModal = async () => {
+    // 必須項目の検証
+    if (!rawText.trim()) {
+      toast({
+        title: "入力エラー",
+        description: "議事録の内容を入力してください",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!selectedThemeId || !date || !time || selectedParticipants.length === 0) {
+      toast({
+        title: "入力エラー",
+        description: "テーマ、日時、参加者をすべて入力してください。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!companyId) {
+      toast({
+        title: "認証エラー",
+        description: "ログインしてください。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // 議事録が保存されていない場合は保存する
+    if (!newMinute) {
+      toast({
+        title: "議事録保存",
+        description: "ToDo登録のために議事録を保存します",
+      })
+
+      // 議事録保存用の関数を呼び出し、保存後にモーダルを開く
+      await handleSaveMinutesForTodo()
+    } else {
+      // 既に議事録が保存されている場合は直接モーダルを開く
+      setTodoModalOpen(true)
+    }
+  }
+
+  // 議事録保存後にToDoモーダルを開くための関数を追加
+  const handleSaveMinutesForTodo = async () => {
+    // 必須項目の検証
+    if (!selectedThemeId || !date || !rawText.trim()) {
+      toast({
+        title: "入力エラー",
+        description: "テーマ、日時、議事録内容は必須項目です。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // 時間のバリデーションを強化
+    if (!time || time.trim() === "") {
+      toast({
+        title: "入力エラー",
+        description: "会議時間を入力してください。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!companyId) {
+      toast({
+        title: "認証エラー",
+        description: "ログインしてください。",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // 議事録を保存
+      const selectedTheme = themes.find((t) => t.id === selectedThemeId)
+
+      // サマリーが生成されていない場合は生成
+      if (!summary.progress && !summary.keyPoints && !summary.decisions && !summary.actions) {
+        const generatedSummary = generateSummaryFromContent(rawText)
+        setSummary(generatedSummary)
+      }
+
+      // キーワードを抽出
+      const keywords = extractKeywords(rawText, {
+        progress: summary.progress,
+        keyPoints: summary.keyPoints,
+        decisions: summary.decisions,
+        actions: summary.actions,
+      })
+
+      // 時間をデータベース形式に変換
+      const dbTime = formatTimeForDatabase(time)
+      console.log("ToDo登録用 - 元の時間値:", time)
+      console.log("ToDo登録用 - データベース用に変換された時間値:", dbTime)
+      console.log("ToDo登録用 - 時間形式が正しいか確認:", /^\d{1,2}:\d{2}:\d{2}$/.test(dbTime))
+
+      const savedMinute = await addMinute(
+        {
+          theme_id: selectedThemeId,
+          title: selectedTheme?.name || "無題の会議",
+          date,
+          time: dbTime, // データベース形式の時間を使用
+          content: rawText,
+          summary_progress: summary.progress || "特記事項なし",
+          summary_key_points: summary.keyPoints || "特記事項なし",
+          summary_decisions: summary.decisions || "特記事項なし",
+          summary_actions: summary.actions || "特記事項なし",
+          keywords,
+          status: "draft",
+          author: "現在のユーザー",
+          participants: selectedParticipants,
+        },
+        companyId,
+      ) // companyIdを渡す
+
+      if (!savedMinute) {
+        throw new Error("議事録の保存に失敗しました")
+      }
+
+      setNewMinute(savedMinute)
+
+      // 発言分離データが存在する場合はSupabaseに保存
+      if (parsedSentences.length > 0) {
+        const sentencesToSave = parsedSentences.map((sentence, index) => ({
+          participant_id: sentence.speaker || null,
+          sentence_text: sentence.text,
+          role_tag: sentence.role || null,
+          sentence_order: index + 1,
+        }))
+
+        console.log("Saving sentences to Supabase:", sentencesToSave.length, "sentences")
+
+        const sentencesSaved = await saveMinuteSentences(savedMinute.id, sentencesToSave, companyId) // companyIdを渡す
+
+        if (sentencesSaved) {
+          console.log("発言データの保存に成功しました")
+        } else {
+          console.warn("発言データの保存に失敗しましたが、議事録は正常に保存されました")
+        }
+      }
+
+      // エスカレーション情報を自動生成・保存
+      try {
+        const escalationCount = await generateAndSaveEscalations(savedMinute.id, selectedThemeId, rawText, companyId) // companyIdを渡す
+
+        if (escalationCount > 0) {
+          toast({
+            title: "エスカレーション検出",
+            description: `${escalationCount}件のリスク項目が検出され、データベースに保存されました。エスカレーション画面で確認してください。`,
+            variant: "warning",
+          })
+        }
+      } catch (escalationError) {
+        console.error("Failed to generate escalations:", escalationError)
+        // エスカレーション生成に失敗しても議事録保存は成功とする
+      }
+
+      console.log("保存された議事録:", savedMinute)
+
+      toast({
+        title: "議事録を保存しました",
+        description: `議事録${parsedSentences.length > 0 ? "と発言データ" : ""}が正常に保存されました。`,
+      })
+
+      // 議事録保存後にToDoモーダルを開く
+      setTodoModalOpen(true)
+    } catch (error) {
+      console.error("Failed to save minutes:", error)
+      toast({
+        title: "エラー",
+        description: "議事録の保存に失敗しました",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // 認証エラーの場合はログインを促す
+  if (authError) {
+    return (
+      <div className="container mx-auto flex flex-col items-center justify-center h-[50vh] gap-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>認証が必要です</CardTitle>
+            <CardDescription>この機能を使用するにはログインが必要です。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-muted-foreground">
+              ログインして会社情報を設定すると、議事録の作成や管理ができるようになります。
+            </p>
+          </CardContent>
+          <CardFooter className="flex justify-center">
+            <Button asChild>
+              <Link href="/login">ログイン</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto flex items-center justify-center h-[50vh]">
@@ -498,7 +813,7 @@ export default function NewMinutesPage() {
   }
 
   return (
-    <div className="container mx-auto">
+    <div className="container mx-auto relative pb-20">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <Button variant="ghost" size="sm" asChild className="mr-4">
@@ -532,17 +847,37 @@ export default function NewMinutesPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="date">会議日</Label>
+                  <Label htmlFor="date">
+                    会議日 <span className="text-red-500">*</span>
+                  </Label>
                   <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="time">会議時間</Label>
-                  <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+                  <Label htmlFor="time">
+                    会議時間 <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="time"
+                    type="time"
+                    value={time}
+                    onChange={(e) => {
+                      setTime(e.target.value)
+                      // 入力値をログに出力して確認
+                      console.log("時間入力値:", e.target.value)
+                      console.log("変換後:", formatTimeForDatabase(e.target.value))
+                    }}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    形式: HH:MM (例: 14:30) - データベースには HH:MM:00 形式で保存されます
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="theme">会議テーマ</Label>
+                <Label htmlFor="theme">
+                  会議テーマ <span className="text-red-500">*</span>
+                </Label>
                 <Select value={selectedThemeId} onValueChange={setSelectedThemeId}>
                   <SelectTrigger id="theme">
                     <SelectValue placeholder="テーマを選択" />
@@ -594,7 +929,9 @@ export default function NewMinutesPage() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="minutes-text">議事録原稿</Label>
+                  <Label htmlFor="minutes-text">
+                    議事録原稿 <span className="text-red-500">*</span>
+                  </Label>
                   <Button type="button" variant="outline" size="sm" onClick={handleOpenAiModal}>
                     <Wand2 className="mr-2 h-4 w-4" />
                     AIドラフト生成
@@ -612,25 +949,50 @@ export default function NewMinutesPage() {
               </div>
             </CardContent>
             <CardFooter className="flex justify-between">
-              <Button
-                onClick={handleGenerateDraft}
-                disabled={isGenerating || !rawText.trim() || !selectedThemeId || selectedParticipants.length === 0}
-              >
-                {isGenerating ? (
-                  <>生成中...</>
-                ) : (
-                  <>
-                    <Wand2 className="mr-2 h-4 w-4" />
-                    発言分離＆タグ付け
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleGenerateDraft}
+                  disabled={isGenerating || !rawText.trim() || !selectedThemeId || selectedParticipants.length === 0}
+                >
+                  {isGenerating ? (
+                    <>生成中...</>
+                  ) : (
+                    <>
+                      <Wand2 className="mr-2 h-4 w-4" />
+                      発言分離＆タグ付け
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={handleOpenTodoModal} disabled={!rawText.trim()}>
+                  <ListTodo className="mr-2 h-4 w-4" />
+                  ToDo登録
+                </Button>
+              </div>
               <Button variant="outline" onClick={handleSaveMinutes}>
                 <Save className="mr-2 h-4 w-4" />
                 議事録を保存
               </Button>
             </CardFooter>
           </Card>
+
+          {/* サマリー表示セクション */}
+          {summary.actions && (
+            <Card>
+              <CardHeader>
+                <CardTitle>次のアクション</CardTitle>
+                <CardDescription>議事録から抽出された次のアクションです。ToDo登録に使用できます。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="whitespace-pre-wrap border rounded-md p-4 bg-muted/50">{summary.actions}</div>
+              </CardContent>
+              <CardFooter>
+                <Button onClick={handleOpenTodoModal} className="ml-auto">
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  アクションをToDoに登録
+                </Button>
+              </CardFooter>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="edit">
@@ -647,10 +1009,16 @@ export default function NewMinutesPage() {
               />
             </CardContent>
             <CardFooter className="flex justify-between">
-              <Button variant="outline" onClick={() => setActiveTab("input")}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                基本情報に戻る
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setActiveTab("input")}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  基本情報に戻る
+                </Button>
+                <Button variant="outline" onClick={handleOpenTodoModal} disabled={!rawText.trim()}>
+                  <ListTodo className="mr-2 h-4 w-4" />
+                  ToDo登録
+                </Button>
+              </div>
               <Button onClick={handleSaveMinutes}>
                 <Save className="mr-2 h-4 w-4" />
                 議事録を保存
@@ -665,6 +1033,21 @@ export default function NewMinutesPage() {
         onOpenChange={setAiModalOpen}
         onDraftGenerated={handleDraftGenerated}
         selectedParticipants={selectedParticipants}
+      />
+
+      <TodoManagementModal
+        open={todoModalOpen}
+        onOpenChange={setTodoModalOpen}
+        minuteId={newMinute?.id || ""}
+        minuteContent={rawText}
+        participants={themeParticipants}
+        onTodosSaved={() => {
+          toast({
+            title: "ToDo登録完了",
+            description: "アクションアイテムがToDo管理に登録されました",
+          })
+          setTodoModalOpen(false)
+        }}
       />
     </div>
   )

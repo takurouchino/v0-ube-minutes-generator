@@ -1,13 +1,24 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
-import { ArrowRight, FileText, Users, Tag, Search, MessageSquare, AlertTriangle, Lock } from "lucide-react"
+import {
+  ArrowRight,
+  FileText,
+  Users,
+  Tag,
+  Search,
+  MessageSquare,
+  AlertTriangle,
+  Lock,
+  CheckSquare,
+  BookOpen,
+} from "lucide-react"
 
 export default function Home() {
   return (
     <div className="container mx-auto">
       <div className="flex flex-col items-center justify-center space-y-6 text-center py-8">
-        <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">AI支援型工場現場議事録ツール</h1>
+        <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">UBE議事録ジェネレーター</h1>
         <p className="max-w-[700px] text-gray-500 md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed dark:text-gray-400">
           会議テーマごとに議事録を構造化・データベース化し、発言分離・タグ付け・AIサマリ生成・承認フローまでをワンストップで行います。
         </p>
@@ -135,6 +146,42 @@ export default function Home() {
             <Button asChild className="w-full">
               <Link href="/access-control">
                 アクセス権管理へ <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CheckSquare className="h-8 w-8 mb-2 text-primary" />
+            <CardTitle>ToDo管理</CardTitle>
+            <CardDescription>議事録から抽出されたアクションアイテムの管理</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p>AIが議事録から自動抽出したアクションアイテムを担当者・期日付きで管理できます。</p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild className="w-full">
+              <Link href="/todos">
+                ToDo管理へ <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <BookOpen className="h-8 w-8 mb-2 text-primary" />
+            <CardTitle>カスタム辞書</CardTitle>
+            <CardDescription>専門用語・固有名詞の誤変換防止</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p>社内の専門用語や固有名詞を登録し、文字起こし時の誤変換を防止します。</p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild className="w-full">
+              <Link href="/dictionary">
+                カスタム辞書へ <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </CardFooter>
