@@ -49,33 +49,33 @@ export async function getParticipants(companyId?: string): Promise<Participant[]
 
     // 各参加者のテーマIDを取得
     const participantsWithThemes = await Promise.all(
-      participants.map(async (participant) => {
+      (participants || []).map(async (participant: any) => {
         const { data: themeParticipants, error: themeError } = await supabase
           .from("theme_participants")
           .select("theme_id, role")
           .eq("participant_id", participant.id)
-          .eq("company_id", companyId) // company_idでフィルタリング
+          .eq("company_id", companyId)
 
         if (themeError) throw themeError
 
         // テーマごとの役割を設定
         const themeRoles: { [themeId: string]: string } = {}
-        themeParticipants.forEach((tp) => {
+        themeParticipants.forEach((tp: any) => {
           if (tp.role) {
             themeRoles[tp.theme_id] = tp.role
           }
         })
 
         return {
-          id: participant.id,
-          name: participant.name,
-          position: participant.position || "",
-          role: participant.role || "",
-          department: participant.department || "",
-          themes: themeParticipants.map((tp) => tp.theme_id),
+          id: participant.id as string,
+          name: participant.name as string,
+          position: participant.position as string || "",
+          role: participant.role as string || "",
+          department: participant.department as string || "",
+          themes: themeParticipants.map((tp: any) => tp.theme_id as string),
           theme_roles: themeRoles,
-          created_at: participant.created_at,
-          updated_at: participant.updated_at,
+          created_at: participant.created_at as string,
+          updated_at: participant.updated_at as string,
         }
       }),
     )
@@ -128,16 +128,16 @@ export async function addParticipant(
       throw new Error("No data returned from insert operation")
     }
 
-    const result = {
-      id: data.id,
-      name: data.name,
-      position: data.position || "",
-      role: data.role || "",
-      department: data.department || "",
+    const result: Participant = {
+      id: data.id as string,
+      name: data.name as string,
+      position: data.position as string || "",
+      role: data.role as string || "",
+      department: data.department as string || "",
       themes: [],
       theme_roles: {},
-      created_at: data.created_at,
-      updated_at: data.updated_at,
+      created_at: data.created_at as string,
+      updated_at: data.updated_at as string,
     }
 
     console.log("Successfully created participant:", result)
@@ -210,32 +210,32 @@ export async function getThemes(companyId?: string): Promise<Theme[]> {
 
     // 各テーマの参加者IDと役割を取得
     const themesWithParticipants = await Promise.all(
-      themes.map(async (theme) => {
+      (themes || []).map(async (theme: any) => {
         const { data: themeParticipants, error: participantError } = await supabase
           .from("theme_participants")
           .select("participant_id, role")
           .eq("theme_id", theme.id)
-          .eq("company_id", companyId) // company_idでフィルタリング
+          .eq("company_id", companyId)
 
         if (participantError) throw participantError
 
         const participantRoles: { [participantId: string]: string } = {}
-        themeParticipants.forEach((tp) => {
+        themeParticipants.forEach((tp: any) => {
           participantRoles[tp.participant_id] = tp.role || "一般参加者"
         })
 
         return {
-          id: theme.id,
-          name: theme.name,
-          category: theme.category || "",
-          description: theme.description || "",
-          background: theme.background || null, // 追加
-          purpose: theme.purpose || null, // 追加
-          reference: theme.reference || null, // references → reference に変更
-          participants: themeParticipants.map((tp) => tp.participant_id),
+          id: theme.id as string,
+          name: theme.name as string,
+          category: theme.category as string || "",
+          description: theme.description as string || "",
+          background: theme.background as string | null || null,
+          purpose: theme.purpose as string | null || null,
+          reference: theme.reference as string | null || null,
+          participants: themeParticipants.map((tp: any) => tp.participant_id as string),
           participant_roles: participantRoles,
-          created_at: theme.created_at,
-          updated_at: theme.updated_at,
+          created_at: theme.created_at as string,
+          updated_at: theme.updated_at as string,
         }
       }),
     )
@@ -565,5 +565,7 @@ export async function updateParticipantRoleInTheme(
 
 // 参加者名を取得するヘルパー関数
 export function getParticipantName(participantId: string): string {
-// この関数は同期的に呼ばれるため、キャッシュされたデータを使用する必要があります
-// 実際のアプリケーション
+  // この関数は同期的に呼ばれるため、キャッシュされたデータを使用する必要があります
+  // 実際のアプリケーションでは、グローバルなキャッシュから参加者名を取得する必要があります
+  return "Unknown Participant" // デフォルト値
+}

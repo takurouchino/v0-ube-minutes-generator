@@ -208,7 +208,7 @@ export async function getTodos(companyId: string): Promise<Todo[]> {
         minutes:minute_id (title, date),
         participants:assignee_id (name, position, role)
       `)
-      .eq("company_id", companyId) // company_idでフィルタリング
+      .eq("company_id", companyId)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -216,29 +216,29 @@ export async function getTodos(companyId: string): Promise<Todo[]> {
       throw error
     }
 
-    return (data || []).map((item) => ({
-      id: item.id,
-      minute_id: item.minute_id,
-      title: item.title,
-      description: item.description,
-      assignee_id: item.assignee_id,
-      assignee_name: item.assignee_name,
-      due_date: item.due_date,
-      priority: item.priority,
-      status: item.status,
-      category: item.category,
-      extracted_from_text: item.extracted_from_text,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      completed_at: item.completed_at,
-      completed_by: item.completed_by,
-      minute_title: item.minutes?.title,
-      minute_date: item.minutes?.date,
+    return (data || []).map((item: any) => ({
+      id: item.id as string,
+      minute_id: item.minute_id as string,
+      title: item.title as string,
+      description: item.description as string | null,
+      assignee_id: item.assignee_id as string | null,
+      assignee_name: item.assignee_name as string | null,
+      due_date: item.due_date as string | null,
+      priority: item.priority as "low" | "medium" | "high" | "urgent",
+      status: item.status as "pending" | "in_progress" | "completed" | "cancelled",
+      category: item.category as string | null,
+      extracted_from_text: item.extracted_from_text as string | null,
+      created_at: item.created_at as string,
+      updated_at: item.updated_at as string,
+      completed_at: item.completed_at as string | null,
+      completed_by: item.completed_by as string | null,
+      minute_title: item.minutes?.title as string | undefined,
+      minute_date: item.minutes?.date as string | undefined,
       assignee_details: item.participants
         ? {
-            name: item.participants.name,
-            position: item.participants.position,
-            role: item.participants.role,
+            name: item.participants.name as string,
+            position: item.participants.position as string | null,
+            role: item.participants.role as string | null,
           }
         : undefined,
     }))

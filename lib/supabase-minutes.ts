@@ -43,35 +43,35 @@ export async function getMinutes(companyId?: string): Promise<Minute[]> {
     if (error) throw error
 
     // データを整形
-    const formattedData = data.map((minute: any) => {
+    const formattedData = (data || []).map((minute: any) => {
       // 参加者の詳細情報を整形
       const participantDetails = minute.participant_details
         ? minute.participant_details
             .filter((pd: any) => pd.participant) // nullチェック
             .map((pd: any) => ({
-              id: pd.participant.id,
-              name: pd.participant.name,
+              id: pd.participant.id as string,
+              name: pd.participant.name as string,
             }))
         : []
 
       // 参加者IDのリストを作成
-      const participantIds = participantDetails.map((pd: any) => pd.id)
+      const participantIds = participantDetails.map((pd) => pd.id)
 
       return {
-        id: minute.id,
-        title: minute.title || "無題の議事録",
-        date: minute.date || new Date().toISOString().split("T")[0],
-        content: minute.content || "",
-        summary_progress: minute.summary_progress || "",
-        summary_key_points: minute.summary_key_points || "",
-        summary_decisions: minute.summary_decisions || "",
-        summary_actions: minute.summary_actions || "",
-        theme_id: minute.theme_id,
+        id: minute.id as string,
+        title: minute.title as string || "無題の議事録",
+        date: minute.date as string || new Date().toISOString().split("T")[0],
+        content: minute.content as string || "",
+        summary_progress: minute.summary_progress as string || "",
+        summary_key_points: minute.summary_key_points as string || "",
+        summary_decisions: minute.summary_decisions as string || "",
+        summary_actions: minute.summary_actions as string || "",
+        theme_id: minute.theme_id as string | null,
         participants: participantIds,
         participant_details: participantDetails,
-        keywords: minute.keywords || [],
-        created_at: minute.created_at,
-        updated_at: minute.updated_at,
+        keywords: (minute.keywords as string[]) || [],
+        created_at: minute.created_at as string,
+        updated_at: minute.updated_at as string,
       }
     })
 
@@ -217,33 +217,33 @@ export async function getMinuteById(id: string, companyId?: string): Promise<Min
     if (!data) return null
 
     // 参加者の詳細情報を整形
-    const participantDetails = data.participant_details
-      ? data.participant_details
+    const participantDetails = ((data.participant_details as unknown) as any[])
+      ? ((data.participant_details as unknown) as any[])
           .filter((pd: any) => pd.participant) // nullチェック
           .map((pd: any) => ({
-            id: pd.participant.id,
-            name: pd.participant.name,
+            id: pd.participant.id as string,
+            name: pd.participant.name as string,
           }))
       : []
 
     // 参加者IDのリストを作成
-    const participantIds = participantDetails.map((pd: any) => pd.id)
+    const participantIds = participantDetails.map((pd: { id: string }) => pd.id)
 
     return {
-      id: data.id,
-      title: data.title || "無題の議事録",
-      date: data.date || new Date().toISOString().split("T")[0],
-      content: data.content || "",
-      summary_progress: data.summary_progress || "",
-      summary_key_points: data.summary_key_points || "",
-      summary_decisions: data.summary_decisions || "",
-      summary_actions: data.summary_actions || "",
-      theme_id: data.theme_id,
+      id: data.id as string,
+      title: (data.title as string) || "無題の議事録",
+      date: (data.date as string) || new Date().toISOString().split("T")[0],
+      content: (data.content as string) || "",
+      summary_progress: (data.summary_progress as string) || "",
+      summary_key_points: (data.summary_key_points as string) || "",
+      summary_decisions: (data.summary_decisions as string) || "",
+      summary_actions: (data.summary_actions as string) || "",
+      theme_id: (data.theme_id as string | null) || null,
       participants: participantIds,
       participant_details: participantDetails,
-      keywords: data.keywords || [],
-      created_at: data.created_at,
-      updated_at: data.updated_at,
+      keywords: (data.keywords as string[]) || [],
+      created_at: data.created_at as string,
+      updated_at: data.updated_at as string,
     }
   } catch (error) {
     console.error("Error fetching minute by ID:", error)

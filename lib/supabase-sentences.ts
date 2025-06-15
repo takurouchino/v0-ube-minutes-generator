@@ -75,7 +75,7 @@ export async function getMinuteSentences(minuteId: string): Promise<MinuteSenten
       .from("minute_sentences_with_details")
       .select("*")
       .eq("minute_id", minuteId)
-      .eq("company_id", companyId) // Add company_id filter
+      .eq("company_id", companyId)
       .order("sentence_order")
 
     if (error) {
@@ -83,21 +83,21 @@ export async function getMinuteSentences(minuteId: string): Promise<MinuteSenten
       throw error
     }
 
-    return (data || []).map((item) => ({
-      id: item.id,
-      minute_id: item.minute_id,
-      participant_id: item.participant_id,
-      sentence_text: item.sentence_text,
-      role_tag: item.role_tag,
-      sentence_order: item.sentence_order,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      participant_name: item.participant_name,
-      participant_position: item.participant_position,
-      participant_role: item.participant_role,
-      minute_title: item.minute_title,
-      minute_date: item.minute_date,
-      minute_time: item.minute_time,
+    return (data || []).map((item: any) => ({
+      id: item.id as string,
+      minute_id: item.minute_id as string,
+      participant_id: item.participant_id as string | null,
+      sentence_text: item.sentence_text as string,
+      role_tag: item.role_tag as string | null,
+      sentence_order: item.sentence_order as number,
+      created_at: item.created_at as string,
+      updated_at: item.updated_at as string,
+      participant_name: item.participant_name as string | undefined,
+      participant_position: item.participant_position as string | undefined,
+      participant_role: item.participant_role as string | undefined,
+      minute_title: item.minute_title as string | undefined,
+      minute_date: item.minute_date as string | undefined,
+      minute_time: item.minute_time as string | undefined,
     }))
   } catch (error) {
     console.error("Error fetching minute sentences:", error)
@@ -200,7 +200,7 @@ export async function addMinuteSentence(sentence: {
   role_tag: string | null
   sentence_order: number
 }): Promise<MinuteSentence | null> {
-  const { companyId } = useAuth() // Get companyId from useAuth
+  const { companyId } = useAuth()
 
   try {
     const user = await getCurrentUser()
@@ -210,7 +210,7 @@ export async function addMinuteSentence(sentence: {
 
     const { data, error } = await supabase
       .from("minute_sentences")
-      .insert({ ...sentence, company_id: companyId }) // Add company_id to the inserted data
+      .insert({ ...sentence, company_id: companyId })
       .select()
       .single()
 
@@ -234,15 +234,17 @@ export async function addMinuteSentence(sentence: {
       throw error
     }
 
+    if (!data) return null
+
     return {
-      id: data.id,
-      minute_id: data.minute_id,
-      participant_id: data.participant_id,
-      sentence_text: data.sentence_text,
-      role_tag: data.role_tag,
-      sentence_order: data.sentence_order,
-      created_at: data.created_at,
-      updated_at: data.updated_at,
+      id: data.id as string,
+      minute_id: data.minute_id as string,
+      participant_id: data.participant_id as string | null,
+      sentence_text: data.sentence_text as string,
+      role_tag: data.role_tag as string | null,
+      sentence_order: data.sentence_order as number,
+      created_at: data.created_at as string,
+      updated_at: data.updated_at as string,
     }
   } catch (error) {
     console.error("Error adding minute sentence:", error)

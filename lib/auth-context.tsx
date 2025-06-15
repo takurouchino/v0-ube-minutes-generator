@@ -27,6 +27,7 @@ type AuthContextType = {
   userProfile: UserProfile | null
   companies: Company[]
   loading: boolean
+  companyId: string | undefined
   signIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string, fullName: string, companyId: string) => Promise<{ error: any }>
   signOut: () => Promise<void>
@@ -41,24 +42,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
 
+  // companyIdを計算
+  const companyId = userProfile?.company_id
+
   useEffect(() => {
+    let mounted = true
+
     // 初期認証状態の確認
     const getInitialSession = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession()
-        setUser(session?.user ?? null)
+        if (mounted) {
+          setUser(session?.user ?? null)
 
-        if (session?.user) {
-          await loadUserProfile(session.user.id)
+          if (session?.user) {
+            await loadUserProfile(session.user.id)
+          }
+
+          await loadCompanies()
         }
-
-        await loadCompanies()
       } catch (error) {
         console.error("Error during initialization:", error)
       } finally {
-        setLoading(false)
+        if (mounted) {
+          setLoading(false)
+        }
       }
     }
 
@@ -68,18 +78,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null)
+      if (mounted) {
+        setUser(session?.user ?? null)
 
-      if (session?.user) {
-        await loadUserProfile(session.user.id)
-      } else {
-        setUserProfile(null)
+        if (session?.user) {
+          await loadUserProfile(session.user.id)
+        } else {
+          setUserProfile(null)
+        }
+
+        setLoading(false)
       }
-
-      setLoading(false)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const loadUserProfile = async (userId: string) => {
@@ -107,14 +122,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (profileData) {
+        const companyData = (profileData.companies as unknown) as { name: string; slug: string } | null
         setUserProfile({
-          id: profileData.id,
-          company_id: profileData.company_id,
-          email: profileData.email,
-          full_name: profileData.full_name,
-          role: profileData.role,
-          company_name: profileData.companies?.name || "",
-          company_slug: profileData.companies?.slug || "",
+          id: profileData.id as string,
+          company_id: profileData.company_id as string,
+          email: profileData.email as string,
+          full_name: profileData.full_name as string,
+          role: profileData.role as "admin" | "manager" | "user",
+          company_name: companyData?.name || "",
+          company_slug: companyData?.slug || "",
         })
       }
     } catch (error) {
@@ -150,7 +166,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // データが取得できた場合は状態を更新
       if (data && data.length > 0) {
         console.log(`Loaded ${data.length} companies`)
-        setCompanies(data)
+        setCompanies(data.map((item: any) => ({
+          id: item.id as string,
+          name: item.name as string,
+          slug: item.slug as string,
+          description: item.description as string | null,
+        })))
       } else {
         console.warn("No companies found in the database")
         setCompanies([])
@@ -239,6 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     userProfile,
     companies,
     loading,
+    companyId,
     signIn,
     signUp,
     signOut,

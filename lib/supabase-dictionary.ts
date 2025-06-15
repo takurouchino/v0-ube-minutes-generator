@@ -38,7 +38,19 @@ export async function getDictionaryEntries(companyId?: string): Promise<Dictiona
       throw error
     }
 
-    return data || []
+    return (data || []).map((entry: any) => ({
+      id: entry.id as string,
+      incorrect_term: entry.incorrect_term as string,
+      correct_term: entry.correct_term as string,
+      category: entry.category as string,
+      pronunciation: entry.pronunciation as string | null,
+      description: entry.description as string | null,
+      usage_count: entry.usage_count as number,
+      created_by: entry.created_by as string | null,
+      created_at: entry.created_at as string,
+      updated_at: entry.updated_at as string,
+      company_id: entry.company_id as string | undefined,
+    }))
   } catch (error) {
     console.error("Error fetching dictionary entries:", error)
     return []
@@ -66,7 +78,19 @@ export async function getDictionaryEntriesByCategory(category: string, companyId
       throw error
     }
 
-    return data || []
+    return (data || []).map((entry: any) => ({
+      id: entry.id as string,
+      incorrect_term: entry.incorrect_term as string,
+      correct_term: entry.correct_term as string,
+      category: entry.category as string,
+      pronunciation: entry.pronunciation as string | null,
+      description: entry.description as string | null,
+      usage_count: entry.usage_count as number,
+      created_by: entry.created_by as string | null,
+      created_at: entry.created_at as string,
+      updated_at: entry.updated_at as string,
+      company_id: entry.company_id as string | undefined,
+    }))
   } catch (error) {
     console.error("Error fetching dictionary entries by category:", error)
     return []
@@ -85,7 +109,15 @@ export async function addDictionaryEntry(
   companyId?: string,
 ): Promise<DictionaryEntry | null> {
   try {
-    const insertData = {
+    const insertData: {
+      incorrect_term: string
+      correct_term: string
+      category: string
+      pronunciation: string | null
+      description: string | null
+      created_by: string
+      company_id?: string
+    } = {
       incorrect_term: entry.incorrect_term,
       correct_term: entry.correct_term,
       category: entry.category,
@@ -96,7 +128,7 @@ export async function addDictionaryEntry(
 
     // 会社IDが指定されている場合は追加
     if (companyId) {
-      insertData["company_id"] = companyId
+      insertData.company_id = companyId
     }
 
     const { data, error } = await supabase.from("custom_dictionary").insert(insertData).select().single()
@@ -106,7 +138,21 @@ export async function addDictionaryEntry(
       throw error
     }
 
-    return data
+    if (!data) return null
+
+    return {
+      id: data.id as string,
+      incorrect_term: data.incorrect_term as string,
+      correct_term: data.correct_term as string,
+      category: data.category as string,
+      pronunciation: data.pronunciation as string | null,
+      description: data.description as string | null,
+      usage_count: data.usage_count as number,
+      created_by: data.created_by as string | null,
+      created_at: data.created_at as string,
+      updated_at: data.updated_at as string,
+      company_id: data.company_id as string | undefined,
+    }
   } catch (error) {
     console.error("Error adding dictionary entry:", error)
     return null
