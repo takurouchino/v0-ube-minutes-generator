@@ -151,7 +151,7 @@ export default function AccessControlPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">アクセス権管理</h1>
+        <h1 className="text-3xl font-bold tracking-tight mb-[15px] mr-[15px]">アクセス権管理</h1>
       </div>
 
       <Card>

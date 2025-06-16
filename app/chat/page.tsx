@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ArrowLeft, Send, Bot, User, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
+import { useAuth } from "@/lib/auth-context"
 
 // メッセージの型定義
 type Message = {
@@ -21,6 +22,8 @@ type Message = {
 
 export default function ChatPage() {
   const { toast } = useToast()
+  const { userProfile } = useAuth()
+  const companyId = userProfile?.company_id || ""
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -44,6 +47,14 @@ export default function ChatPage() {
     e.preventDefault()
 
     if (!input.trim()) return
+    if (!companyId) {
+      toast({
+        title: "会社IDが必要です",
+        description: "会社IDが取得できません。ログイン状態を確認してください。",
+        variant: "destructive",
+      })
+      return
+    }
 
     // ユーザーメッセージの追加
     const userMessage: Message = {
@@ -67,6 +78,7 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           question: currentInput,
+          companyId,
         }),
       })
 
@@ -120,15 +132,9 @@ export default function ChatPage() {
 
   return (
     <div className="container mx-auto">
-      <div className="flex items-center mb-6">
-        <Button variant="ghost" size="sm" asChild className="mr-4">
-          <Link href="/">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            戻る
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold tracking-tight">AI議事録チャット</h1>
-        <Button variant="ghost" size="sm" onClick={handleClearChat} className="ml-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold tracking-tight mb-[15px] mr-[15px]">AI議事録チャット</h1>
+        <Button variant="ghost" size="sm" onClick={handleClearChat}>
           <RefreshCw className="mr-2 h-4 w-4" />
           チャットをクリア
         </Button>
@@ -142,6 +148,20 @@ export default function ChatPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <form onSubmit={handleSendMessage} className="flex flex-col gap-2 mb-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="質問を入力..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                className="flex-1"
+                disabled={isLoading}
+              />
+              <Button type="submit" disabled={isLoading || !input.trim()}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
           <div className="space-y-4 h-[60vh] overflow-y-auto p-4">
             {messages.map((message) => (
               <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -202,21 +222,6 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
         </CardContent>
-        <CardFooter>
-          <form onSubmit={handleSendMessage} className="flex w-full space-x-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="議事録について何でもお聞きください..."
-              disabled={isLoading}
-              className="flex-grow"
-            />
-            <Button type="submit" disabled={isLoading || !input.trim()}>
-              <Send className="h-4 w-4" />
-              <span className="sr-only">送信</span>
-            </Button>
-          </form>
-        </CardFooter>
       </Card>
 
       <div className="text-sm text-muted-foreground">

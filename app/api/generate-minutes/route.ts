@@ -25,43 +25,46 @@ export async function POST(request: Request) {
 
     // プロンプトの作成
     const prompt = `
-あなたは会議の文字起こしから議事録を作成する専門家です。
+あなたは会議の文字起こしから議事録を作成し、さらに重要な発言を抽出・タグ付けする専門家です。
 
-## 議事録形式
+# 1. 議事録ドラフトを作成してください。
 - 参加者
 - Agenda
 - 議論内容
 - Next Action
+の構成でまとめてください。
 
-## アイスブレイクの除外
-- 会話のうち、アイスブレイク（雑談や本題に直接関係のない内容）は議事録に含めないでください。
+# 2. 議事録ドラフト全文から、重要な発言（センテンス）をピックアップし、
+- 担当者（参加者リストから最も適切な人物を推測）
+- 重要度（高・中・低から推測）
+- 発言種類（ToDo/報告/決定/課題/提案/その他から推測）
+を付与してJSONで出力してください。
 
-## 固有名詞の修正
-- 文字起こしで誤認識される恐れがあるため、コンテキストを考慮し、以下の単語は正しく変換してください。
-- 「阿部じゃ」「あべじゃ」など → **ABEJA**
-- 「Ops B」「オプスビー」など → **Opsbee（LLMOpsツール）**
-- 「色を llm」「いろをエルエルエム」など→ **医療LLM**
-- 「pg」「ピージー」など → **PAG（プラットフォームアプリケーショングループの略）**
-- 「わんわん」「ワンワン」など → **1-on-1**
+## 出力形式
+{
+  "draft": "...生成された議事録ドラフト...",
+  "sentences": [
+    {
+      "id": "1",
+      "text": "重要な発言内容",
+      "speaker": "推測した担当者名（またはID）",
+      "role": "発言種類（ToDo/報告/決定/課題/提案/その他）",
+      "importance": "高|中|低"
+    },
+    ...
+  ]
+}
 
-## 論点の整理
-ユーザーは何かしらプロジェクトないしはプロダクトの開発でゴールを達成したいと考えています。
-一方で、そもそも本質的に因数分解ができていない可能性がある場合は方向修正を早期に行う必要があるので、厳格に指摘をしてください。ここにおけるゴールから仮説までの定義を下記に記載します。
-- **ゴール**
-  - 成し遂げたい姿が明確でなければならない。
-  - 方法や手段に囚われてはいけない。
-- **論点（ゴールを達成するための重要ポイント）**
-  - 論点がすべて明確になればゴール達成とみなせるようにならなければならない。
-- **問い（筋の良い問い）**
-  - 各論点を解決するために、どんな疑問を明確化すればよいかが明確にならなければならない。
-- **仮説（現時点での想定）**
-  - 問いに対する現時点の考えや想定が明確にならなければならない。
-  - 複数の仮説があれば列挙し、優先度や根拠も明確にならなければならない。
+# 入力
+- 文字起こし全文:
+${transcription}
+- 参加者リスト: ${participantIds.join(", ")}
 
-これらの要件に沿って、最終的に「参加者」「Agenda」「議論内容」「Next Action」を柱とする議事録を出力してください。
-
-参加者ID: ${participantIds.join(", ")}
-`
+# 注意事項
+- 必ず有効なJSONのみで出力してください。
+- センテンスは**最低5件以上**、できるだけ全体をまんべんなく分割して抽出してください。
+- 担当者が不明な場合はnullまたは空文字でOKです。
+`;
 
     console.log("Sending request to OpenAI API with prompt:", prompt.substring(0, 50) + "...")
 
@@ -85,7 +88,8 @@ export async function POST(request: Request) {
           },
         ],
         temperature: 0.7,
-        max_tokens: 1500,
+        max_tokens: 2000,
+        response_format: { type: "json_object" },
       }),
     })
 
@@ -120,9 +124,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "OpenAI APIからの応答形式が無効です" }, { status: 500 })
     }
 
-    const draft = data.choices[0].message.content
-
-    return NextResponse.json({ draft })
+    console.log("AI raw response:", data.choices[0].message.content);
+    let draft = ""
+    let sentences: any[] = []
+    try {
+      const parsed = JSON.parse(data.choices[0].message.content)
+      draft = parsed.draft || ""
+      sentences = parsed.sentences || []
+    } catch (e) {
+      draft = data.choices[0].message.content || ""
+      // draftを5文に分割して仮センテンス生成
+      const split = draft.split(/\n|。|\.|\!|\?/).filter(s => s.trim()).slice(0, 5)
+      sentences = split.map((text, i) => ({
+        id: String(i + 1),
+        text,
+        speaker: "",
+        role: "",
+        importance: "中"
+      }))
+    }
+    return NextResponse.json({ draft, sentences })
   } catch (error) {
     console.error("Error in generate-minutes route:", error)
     return NextResponse.json(

@@ -1,7 +1,7 @@
 "use client"
 
-import type React from "react"
-
+import React from "react"
+import { use } from "react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -22,10 +22,13 @@ import {
   type Participant,
   type Theme,
 } from "@/lib/supabase-storage"
+import { useAuth } from "@/lib/auth-context"
 
-export default function EditParticipantPage({ params }: { params: { id: string } }) {
+export default function EditParticipantPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const { toast } = useToast()
+  const { userProfile } = useAuth()
+  const { id } = use(params)
   const [participant, setParticipant] = useState<Participant | null>(null)
   const [themes, setThemes] = useState<Theme[]>([])
   const [name, setName] = useState("")
@@ -43,8 +46,8 @@ export default function EditParticipantPage({ params }: { params: { id: string }
         setLoading(true)
 
         // 参加者データを取得
-        const participants = await getParticipants()
-        const foundParticipant = participants.find((p) => p.id === params.id)
+        const participants = await getParticipants(userProfile?.company_id)
+        const foundParticipant = participants.find((p) => p.id === id)
 
         if (!foundParticipant) {
           setError("参加者が見つかりませんでした")
@@ -61,7 +64,7 @@ export default function EditParticipantPage({ params }: { params: { id: string }
         setOriginalThemes(foundParticipant.themes)
 
         // テーマデータを取得
-        const themesData = await getThemes()
+        const themesData = await getThemes(userProfile?.company_id)
         setThemes(themesData)
       } catch (err) {
         console.error("Failed to load participant data:", err)
@@ -71,8 +74,10 @@ export default function EditParticipantPage({ params }: { params: { id: string }
       }
     }
 
-    loadData()
-  }, [params.id, router])
+    if (userProfile?.company_id) {
+      loadData()
+    }
+  }, [id, router, userProfile])
 
   // テーマの選択状態を切り替え
   const toggleTheme = (themeId: string) => {
@@ -202,28 +207,13 @@ export default function EditParticipantPage({ params }: { params: { id: string }
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="role">役割</Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger id="role">
-                  <SelectValue placeholder="役割を選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="管理者">管理者</SelectItem>
-                  <SelectItem value="品質管理">品質管理</SelectItem>
-                  <SelectItem value="生産管理">生産管理</SelectItem>
-                  <SelectItem value="安全管理">安全管理</SelectItem>
-                  <SelectItem value="社外コンサル">社外コンサル</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="department">所属部署</Label>
+              <Label htmlFor="department">部署</Label>
               <Input
                 id="department"
-                placeholder="例: 製造部"
+                placeholder="例: 開発部"
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
+                required
               />
             </div>
 

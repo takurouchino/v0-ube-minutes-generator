@@ -33,14 +33,26 @@ export default function MinuteSentencesPage() {
   const [editingData, setEditingData] = useState<{
     sentence_text: string
     participant_id: string | null
-    role_tag: string | null
+    speech_type: string | null
+    importance: string | null
   }>({
     sentence_text: "",
     participant_id: "",
-    role_tag: "",
+    speech_type: "",
+    importance: "",
   })
 
-  const roles = ["管理者", "品質管理", "生産管理", "安全管理", "社外コンサル"]
+  const speechTypes = [
+    "品質改善",
+    "品質不良",
+    "納期遅延",
+    "生産異常",
+    "クレーム対応",
+    "生産条件改善",
+    "ToDo"
+  ]
+
+  const importanceLevels = ["高", "中", "低"]
 
   // データの読み込み
   useEffect(() => {
@@ -107,7 +119,8 @@ export default function MinuteSentencesPage() {
     setEditingData({
       sentence_text: sentence.sentence_text,
       participant_id: sentence.participant_id || "",
-      role_tag: sentence.role_tag || "",
+      speech_type: sentence.speech_type || "",
+      importance: sentence.importance || "",
     })
   }
 
@@ -117,7 +130,8 @@ export default function MinuteSentencesPage() {
     setEditingData({
       sentence_text: "",
       participant_id: "",
-      role_tag: "",
+      speech_type: "",
+      importance: "",
     })
   }
 
@@ -128,7 +142,8 @@ export default function MinuteSentencesPage() {
         ...sentence,
         sentence_text: editingData.sentence_text,
         participant_id: editingData.participant_id,
-        role_tag: editingData.role_tag,
+        speech_type: editingData.speech_type,
+        importance: editingData.importance,
       }
 
       const success = await updateMinuteSentence(updatedSentence)
@@ -213,13 +228,7 @@ export default function MinuteSentencesPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center mb-6">
-        <Button variant="ghost" size="sm" asChild className="mr-4">
-          <Link href={`/search`}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            検索・履歴に戻る
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold tracking-tight">発言データ詳細</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">発言一覧</h1>
       </div>
 
       <Card className="mb-6">
@@ -265,7 +274,8 @@ export default function MinuteSentencesPage() {
                 <TableRow>
                   <TableHead className="w-16">順序</TableHead>
                   <TableHead>発言者</TableHead>
-                  <TableHead>役割</TableHead>
+                  <TableHead>発言種類</TableHead>
+                  <TableHead>重要度</TableHead>
                   <TableHead>発言内容</TableHead>
                   <TableHead className="w-24">操作</TableHead>
                 </TableRow>
@@ -302,23 +312,45 @@ export default function MinuteSentencesPage() {
                     <TableCell>
                       {editingId === sentence.id ? (
                         <Select
-                          value={editingData.role_tag}
-                          onValueChange={(value) => setEditingData({ ...editingData, role_tag: value })}
+                          value={editingData.speech_type}
+                          onValueChange={(value) => setEditingData({ ...editingData, speech_type: value })}
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="役割を選択" />
+                            <SelectValue placeholder="発言種類を選択" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">未設定</SelectItem>
-                            {roles.map((role) => (
-                              <SelectItem key={role} value={role}>
-                                {role}
+                            {speechTypes.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {type}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       ) : (
-                        sentence.role_tag && <Badge variant="outline">{sentence.role_tag}</Badge>
+                        sentence.speech_type && <Badge variant="outline">{sentence.speech_type}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === sentence.id ? (
+                        <Select
+                          value={editingData.importance}
+                          onValueChange={(value) => setEditingData({ ...editingData, importance: value })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="重要度を選択" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">未設定</SelectItem>
+                            {importanceLevels.map((level) => (
+                              <SelectItem key={level} value={level}>
+                                {level}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        sentence.importance && <Badge variant="outline">{sentence.importance}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -347,6 +379,44 @@ export default function MinuteSentencesPage() {
                           <Edit className="h-4 w-4" />
                         </Button>
                       )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ToDoタグ付き発言一覧 */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>ToDoタグ付き発言一覧</CardTitle>
+          <CardDescription>ToDoを登録・編集できます。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* ToDo登録・編集UI */}
+          {sentences.filter(s => s.speech_type === 'ToDo').length === 0 ? (
+            <div className="text-center py-4 text-muted-foreground">ToDoタグ付き発言がありません。</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>発言内容</TableHead>
+                  <TableHead>担当者</TableHead>
+                  <TableHead>重要度</TableHead>
+                  <TableHead>ToDo登録</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sentences.filter(s => s.speech_type === 'ToDo').map(sentence => (
+                  <TableRow key={sentence.id}>
+                    <TableCell>{sentence.sentence_text}</TableCell>
+                    <TableCell>{sentence.participant_name || '不明'}</TableCell>
+                    <TableCell>{sentence.importance || '-'}</TableCell>
+                    <TableCell>
+                      {/* ここにToDo登録・編集フォームを設置（例: タイトル・期日・優先度・保存ボタン） */}
+                      {/* minute_sentence_id: sentence.id を渡して登録 */}
                     </TableCell>
                   </TableRow>
                 ))}

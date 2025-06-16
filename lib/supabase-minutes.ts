@@ -1,4 +1,4 @@
-"use client"
+// 'use client' を削除
 
 import { supabase } from "./supabase"
 
@@ -7,6 +7,7 @@ export type Minute = {
   id: string
   title: string
   date: string
+  time: string
   content: string
   summary_progress: string
   summary_key_points: string
@@ -16,8 +17,10 @@ export type Minute = {
   participants: string[]
   participant_details?: Array<{ id: string; name: string; role?: string }>
   keywords?: string[]
+  status: string
   created_at?: string
   updated_at?: string
+  author?: string | null
 }
 
 // 議事録の取得
@@ -55,12 +58,13 @@ export async function getMinutes(companyId?: string): Promise<Minute[]> {
         : []
 
       // 参加者IDのリストを作成
-      const participantIds = participantDetails.map((pd) => pd.id)
+      const participantIds = participantDetails.map((pd: any) => pd.id)
 
       return {
         id: minute.id as string,
         title: minute.title as string || "無題の議事録",
         date: minute.date as string || new Date().toISOString().split("T")[0],
+        time: minute.time as string || "",
         content: minute.content as string || "",
         summary_progress: minute.summary_progress as string || "",
         summary_key_points: minute.summary_key_points as string || "",
@@ -70,8 +74,10 @@ export async function getMinutes(companyId?: string): Promise<Minute[]> {
         participants: participantIds,
         participant_details: participantDetails,
         keywords: (minute.keywords as string[]) || [],
+        status: minute.status as string || "",
         created_at: minute.created_at as string,
         updated_at: minute.updated_at as string,
+        author: minute.author as string | undefined,
       }
     })
 
@@ -127,6 +133,7 @@ export async function searchMinutes(keyword: string, companyId?: string): Promis
         id: minute.id,
         title: minute.title || "無題の議事録",
         date: minute.date || new Date().toISOString().split("T")[0],
+        time: minute.time || "",
         content: minute.content || "",
         summary_progress: minute.summary_progress || "",
         summary_key_points: minute.summary_key_points || "",
@@ -136,8 +143,10 @@ export async function searchMinutes(keyword: string, companyId?: string): Promis
         participants: participantIds,
         participant_details: participantDetails,
         keywords: minute.keywords || [],
+        status: minute.status || "",
         created_at: minute.created_at,
         updated_at: minute.updated_at,
+        author: minute.author as string | undefined,
       }
     })
 
@@ -193,12 +202,8 @@ export async function deleteMinute(id: string, companyId?: string): Promise<bool
 
 // 議事録の詳細取得
 export async function getMinuteById(id: string, companyId?: string): Promise<Minute | null> {
-  if (!companyId) {
-    console.error("認証が必要です")
-    return null
-  }
-
   try {
+    const trimmedId = id.trim();
     const { data, error } = await supabase
       .from("minutes")
       .select(`
@@ -208,8 +213,7 @@ export async function getMinuteById(id: string, companyId?: string): Promise<Min
           participant:participants(id, name)
         )
       `)
-      .eq("id", id)
-      .eq("company_id", companyId)
+      .eq("id", trimmedId)
       .single()
 
     if (error) throw error
@@ -227,12 +231,13 @@ export async function getMinuteById(id: string, companyId?: string): Promise<Min
       : []
 
     // 参加者IDのリストを作成
-    const participantIds = participantDetails.map((pd: { id: string }) => pd.id)
+    const participantIds = participantDetails.map((pd: any) => pd.id)
 
     return {
       id: data.id as string,
       title: (data.title as string) || "無題の議事録",
       date: (data.date as string) || new Date().toISOString().split("T")[0],
+      time: (data.time as string) || "",
       content: (data.content as string) || "",
       summary_progress: (data.summary_progress as string) || "",
       summary_key_points: (data.summary_key_points as string) || "",
@@ -242,8 +247,10 @@ export async function getMinuteById(id: string, companyId?: string): Promise<Min
       participants: participantIds,
       participant_details: participantDetails,
       keywords: (data.keywords as string[]) || [],
+      status: (data.status as string) || "",
       created_at: data.created_at as string,
       updated_at: data.updated_at as string,
+      author: data.author as string | undefined,
     }
   } catch (error) {
     console.error("Error fetching minute by ID:", error)
@@ -268,13 +275,16 @@ export async function saveMinute(
       .insert({
         title: minute.title,
         date: minute.date,
+        time: minute.time,
         content: minute.content,
         summary_progress: minute.summary_progress,
         summary_key_points: minute.summary_key_points,
         summary_decisions: minute.summary_decisions,
         summary_actions: minute.summary_actions,
         theme_id: minute.theme_id,
+        status: minute.status,
         keywords: minute.keywords || [],
+        author: minute.author || null,
         company_id: companyId,
       })
       .select()
@@ -287,7 +297,6 @@ export async function saveMinute(
       const participantInserts = minute.participants.map((participantId) => ({
         minute_id: data.id,
         participant_id: participantId,
-        company_id: companyId,
       }))
 
       const { error: participantError } = await supabase.from("minute_participants").insert(participantInserts)
@@ -295,7 +304,7 @@ export async function saveMinute(
       if (participantError) throw participantError
     }
 
-    return data.id
+    return data.id as string | null
   } catch (error) {
     console.error("Error saving minute:", error)
     return null
@@ -321,7 +330,7 @@ export async function addMinute(
           const { data: profile } = await supabase.from("profiles").select("company_id").eq("id", user.id).single()
 
           if (profile) {
-            userCompanyId = profile.company_id
+            userCompanyId = profile.company_id as string | undefined
           }
         }
       } catch (authError) {
@@ -363,13 +372,16 @@ export async function updateMinute(minute: Minute, companyId?: string): Promise<
       .update({
         title: minute.title,
         date: minute.date,
+        time: minute.time,
         content: minute.content,
         summary_progress: minute.summary_progress,
         summary_key_points: minute.summary_key_points,
         summary_decisions: minute.summary_decisions,
         summary_actions: minute.summary_actions,
         theme_id: minute.theme_id,
+        status: minute.status,
         keywords: minute.keywords || [],
+        author: minute.author || null,
       })
       .eq("id", minute.id)
       .eq("company_id", companyId)
@@ -390,7 +402,6 @@ export async function updateMinute(minute: Minute, companyId?: string): Promise<
       const participantInserts = minute.participants.map((participantId) => ({
         minute_id: minute.id,
         participant_id: participantId,
-        company_id: companyId,
       }))
 
       const { error: participantError } = await supabase.from("minute_participants").insert(participantInserts)

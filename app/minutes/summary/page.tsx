@@ -62,13 +62,7 @@ export default function SummaryPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center mb-6">
-        <Button variant="ghost" size="sm" asChild className="mr-4">
-          <Link href="/minutes/new">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            戻る
-          </Link>
-        </Button>
-        <h1 className="text-3xl font-bold tracking-tight">AIサマリ確認</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">議事録サマリー</h1>
       </div>
 
       <Card className="mb-6">

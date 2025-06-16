@@ -72,7 +72,7 @@ export function ThemeTable({ themes }: ThemeTableProps) {
               <TableCell>{theme.participants.length}</TableCell>
               <TableCell className="text-right space-x-2">
                 <Button variant="outline" size="icon" asChild>
-                  <Link href={`/themes/${theme.id}/edit`}>
+                  <Link href={`/themes/${theme.id}`}>
                     <Edit className="h-4 w-4" />
                     <span className="sr-only">編集</span>
                   </Link>

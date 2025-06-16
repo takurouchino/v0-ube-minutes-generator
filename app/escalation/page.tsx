@@ -115,11 +115,8 @@ export default function EscalationPage() {
   const renderEscalationTable = (
     escalations: EscalationItem[],
     category: "technical" | "business" | "personnel",
-    limit = 3,
   ) => {
-    const displayEscalations = escalations.slice(0, limit)
-
-    if (displayEscalations.length === 0) {
+    if (escalations.length === 0) {
       return <div className="text-center py-8 text-muted-foreground">該当するエスカレーション項目はありません</div>
     }
 
@@ -130,12 +127,12 @@ export default function EscalationPage() {
             <TableHead>リスク</TableHead>
             <TableHead>テーマ</TableHead>
             <TableHead>日付</TableHead>
-            <TableHead className="hidden md:table-cell">発言抜粋</TableHead>
+            <TableHead className="hidden md:table-cell">リスク要約</TableHead>
             <TableHead className="text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {displayEscalations.map((escalation) => (
+          {escalations.map((escalation) => (
             <TableRow key={escalation.id}>
               <TableCell>
                 <Badge variant={getRiskBadgeVariant(escalation.risk_score) as any} className="font-medium">
@@ -144,7 +141,7 @@ export default function EscalationPage() {
               </TableCell>
               <TableCell>{escalation.theme_name || "不明なテーマ"}</TableCell>
               <TableCell>{escalation.minute_date || "不明な日付"}</TableCell>
-              <TableCell className="hidden md:table-cell max-w-xs truncate">{escalation.excerpt}</TableCell>
+              <TableCell className="hidden md:table-cell max-w-xs truncate">{escalation.summary}</TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" size="icon" asChild>
@@ -177,7 +174,7 @@ export default function EscalationPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">エスカレーション</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">エスカレーション</h1>
         <Button variant="outline" onClick={loadEscalations} disabled={refreshing}>
           <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           更新
@@ -222,18 +219,7 @@ export default function EscalationPage() {
               <CardDescription>製造工程、設備、品質などに関する技術的なリスク項目です。</CardDescription>
             </CardHeader>
             <CardContent>
-              <Accordion type="single" collapsible className="mb-4">
-                <AccordionItem value="top3">
-                  <AccordionTrigger>リスク上位3件</AccordionTrigger>
-                  <AccordionContent>{renderEscalationTable(technicalEscalations, "technical", 3)}</AccordionContent>
-                </AccordionItem>
-                {technicalEscalations.length > 3 && (
-                  <AccordionItem value="all">
-                    <AccordionTrigger>すべてのリスク（{technicalEscalations.length}件）</AccordionTrigger>
-                    <AccordionContent>{renderEscalationTable(technicalEscalations, "technical", 10)}</AccordionContent>
-                  </AccordionItem>
-                )}
-              </Accordion>
+              {renderEscalationTable(technicalEscalations, "technical")}
             </CardContent>
           </Card>
         </TabsContent>
@@ -248,18 +234,7 @@ export default function EscalationPage() {
               <CardDescription>納期、コスト、顧客対応などに関する事業的なリスク項目です。</CardDescription>
             </CardHeader>
             <CardContent>
-              <Accordion type="single" collapsible className="mb-4">
-                <AccordionItem value="top3">
-                  <AccordionTrigger>リスク上位3件</AccordionTrigger>
-                  <AccordionContent>{renderEscalationTable(businessEscalations, "business", 3)}</AccordionContent>
-                </AccordionItem>
-                {businessEscalations.length > 3 && (
-                  <AccordionItem value="all">
-                    <AccordionTrigger>すべてのリスク（{businessEscalations.length}件）</AccordionTrigger>
-                    <AccordionContent>{renderEscalationTable(businessEscalations, "business", 10)}</AccordionContent>
-                  </AccordionItem>
-                )}
-              </Accordion>
+              {renderEscalationTable(businessEscalations, "business")}
             </CardContent>
           </Card>
         </TabsContent>
@@ -274,18 +249,7 @@ export default function EscalationPage() {
               <CardDescription>人員配置、スキル、労務管理などに関する人事的なリスク項目です。</CardDescription>
             </CardHeader>
             <CardContent>
-              <Accordion type="single" collapsible className="mb-4">
-                <AccordionItem value="top3">
-                  <AccordionTrigger>リスク上位3件</AccordionTrigger>
-                  <AccordionContent>{renderEscalationTable(personnelEscalations, "personnel", 3)}</AccordionContent>
-                </AccordionItem>
-                {personnelEscalations.length > 3 && (
-                  <AccordionItem value="all">
-                    <AccordionTrigger>すべてのリスク（{personnelEscalations.length}件）</AccordionTrigger>
-                    <AccordionContent>{renderEscalationTable(personnelEscalations, "personnel", 10)}</AccordionContent>
-                  </AccordionItem>
-                )}
-              </Accordion>
+              {renderEscalationTable(personnelEscalations, "personnel")}
             </CardContent>
           </Card>
         </TabsContent>

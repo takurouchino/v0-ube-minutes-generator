@@ -25,6 +25,7 @@ interface AddParticipantWithRoleModalProps {
   onClose: () => void
   onAddParticipant: (participant: Participant) => void
   existingParticipantIds: string[]
+  availableParticipants?: Participant[]
 }
 
 // 役割の選択肢を定義
@@ -46,8 +47,9 @@ export function AddParticipantWithRoleModal({
   onClose,
   onAddParticipant,
   existingParticipantIds,
+  availableParticipants,
 }: AddParticipantWithRoleModalProps) {
-  const [availableParticipants, setAvailableParticipants] = useState<Participant[]>([])
+  const [internalAvailableParticipants, setInternalAvailableParticipants] = useState<Participant[]>([])
   const [selectedParticipantId, setSelectedParticipantId] = useState<string>("")
   const [selectedRoleOption, setSelectedRoleOption] = useState<string>("一般参加者")
   const [customRole, setCustomRole] = useState<string>("")
@@ -58,12 +60,19 @@ export function AddParticipantWithRoleModal({
 
   useEffect(() => {
     const loadAvailableParticipants = async () => {
-      if (!isOpen || !userProfile?.company_id) return
-
+      if (!isOpen) return
+      if (availableParticipants) {
+        setInternalAvailableParticipants(
+          availableParticipants.filter((p) => !existingParticipantIds.includes(p.id))
+        )
+        return
+      }
+      // fallback: 既存の自動取得（themeIdがuuidの場合のみ）
+      if (!userProfile?.company_id || !themeId) return
       try {
         setLoading(true)
         const participants = await getParticipantsNotInTheme(themeId, userProfile.company_id)
-        setAvailableParticipants(participants)
+        setInternalAvailableParticipants(participants)
       } catch (error) {
         console.error("Failed to load available participants:", error)
         toast({
@@ -79,7 +88,7 @@ export function AddParticipantWithRoleModal({
     if (isOpen) {
       loadAvailableParticipants()
     }
-  }, [isOpen, themeId, toast, userProfile])
+  }, [isOpen, themeId, toast, userProfile, availableParticipants, existingParticipantIds])
 
   const handleRoleChange = (value: string) => {
     setSelectedRoleOption(value)
@@ -114,10 +123,30 @@ export function AddParticipantWithRoleModal({
 
     try {
       setIsSubmitting(true)
+
+      // themeIdが未定義または空文字ならDB登録せずローカルstateのみ
+      if (!themeId) {
+        const addedParticipant = internalAvailableParticipants.find((p) => p.id === selectedParticipantId)
+        if (addedParticipant) {
+          const participantWithRole = {
+            ...addedParticipant,
+            themes: [...addedParticipant.themes],
+            theme_roles: { ...addedParticipant.theme_roles, temp: roleToApply },
+          }
+          onAddParticipant(participantWithRole)
+        }
+        onClose()
+        setSelectedParticipantId("")
+        setSelectedRoleOption("一般参加者")
+        setCustomRole("")
+        return
+      }
+
+      // 既存のDB登録処理
       const success = await addParticipantToTheme(themeId, selectedParticipantId, roleToApply, userProfile.company_id)
 
       if (success) {
-        const addedParticipant = availableParticipants.find((p) => p.id === selectedParticipantId)
+        const addedParticipant = internalAvailableParticipants.find((p) => p.id === selectedParticipantId)
         if (addedParticipant) {
           // テーマの役割情報を追加
           const participantWithRole = {
@@ -162,7 +191,7 @@ export function AddParticipantWithRoleModal({
                   <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-primary"></div>
                   <span className="text-sm text-muted-foreground">読み込み中...</span>
                 </div>
-              ) : availableParticipants.length === 0 ? (
+              ) : internalAvailableParticipants.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   追加できる参加者がいません。新しい参加者を登録してください。
                 </div>
@@ -172,7 +201,7 @@ export function AddParticipantWithRoleModal({
                     <SelectValue placeholder="参加者を選択" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableParticipants.map((participant) => (
+                    {internalAvailableParticipants.map((participant) => (
                       <SelectItem key={participant.id} value={participant.id}>
                         {participant.name}
                         {participant.position && ` (${participant.position})`}

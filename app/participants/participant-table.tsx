@@ -62,7 +62,6 @@ export function ParticipantTable() {
             <TableHead>名前</TableHead>
             <TableHead>役職</TableHead>
             <TableHead>部署</TableHead>
-            <TableHead>役割</TableHead>
             <TableHead>参加テーマ数</TableHead>
           </TableRow>
         </TableHeader>
@@ -76,7 +75,6 @@ export function ParticipantTable() {
               </TableCell>
               <TableCell>{participant.position}</TableCell>
               <TableCell>{participant.department}</TableCell>
-              <TableCell>{participant.role}</TableCell>
               <TableCell>{participant.themes.length}</TableCell>
             </TableRow>
           ))}

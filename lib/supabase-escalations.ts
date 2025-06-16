@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { analyzeEscalations } from "./openai-escalation"
 
 export type EscalationItem = {
   id: string
@@ -6,10 +7,12 @@ export type EscalationItem = {
   theme_name: string | null
   minute_date: string | null
   risk_score: number
-  excerpt: string
+  content: string
+  summary: string
   category: "technical" | "business" | "personnel"
   confirmed: boolean
   created_at: string
+  company_id?: string
 }
 
 // エスカレーション情報をカテゴリ別に取得
@@ -184,49 +187,54 @@ export async function getEscalationStats(companyId?: string) {
 // AIによるエスカレーション生成と保存
 export async function generateAndSaveEscalations(
   minuteId: string,
-  sentences: any[],
+  themeName: string | null,
+  content: string,
+  minuteDate: string | null,
   companyId?: string,
-): Promise<boolean> {
+): Promise<number> {
   try {
-    // AIによるエスカレーション分析のシミュレーション
-    // 実際のプロダクションでは、OpenAIなどのAPIを使用して分析を行う
-    const escalations = sentences
-      .filter((s) => s.importance_score > 0.7) // 重要度が高い文章のみ抽出
-      .map((sentence) => {
-        // カテゴリをランダムに決定（実際はAIが判断）
-        const categories = ["technical", "business", "personnel"] as const
-        const randomCategory = categories[Math.floor(Math.random() * categories.length)]
-
-        // リスクスコアを計算（実際はAIが判断）
-        const riskScore = Math.min(Math.round(sentence.importance_score * 100), 100)
-
-        return {
-          minute_id: minuteId,
-          theme_name: sentence.theme_name || "不明なテーマ",
-          risk_score: riskScore,
-          excerpt: sentence.content,
-          category: randomCategory,
-          confirmed: false,
-          company_id: companyId, // 会社IDを設定
-        }
-      })
+    // OpenAIを使用してエスカレーションを分析
+    const escalations = await analyzeEscalations(
+      content,
+      minuteId,
+      themeName,
+      minuteDate,
+      companyId,
+    )
 
     if (escalations.length === 0) {
       console.log("No escalations to save")
-      return true
+      return 0
     }
 
     // 既存のsupabaseクライアントを使用
-    const { error } = await supabase.from("escalations").insert(escalations)
+    const { error } = await supabase.from("escalations").insert(
+      escalations.map(e => ({
+        id: e.id,
+        minute_id: e.minute_id,
+        theme_name: e.theme_name,
+        minute_date: e.minute_date,
+        risk_score: e.risk_score,
+        content: e.content,
+        summary: e.summary,
+        category: e.category,
+        confirmed: e.confirmed,
+        created_at: e.created_at,
+        company_id: e.company_id ?? null,
+      }))
+    )
 
     if (error) {
       console.error("Failed to save escalations:", error)
       throw new Error(`エスカレーション情報の保存に失敗しました: ${error.message}`)
     }
 
-    return true
+    return escalations.length
   } catch (error) {
     console.error("Error in generateAndSaveEscalations:", error)
-    throw error
+    if (error instanceof Error) {
+      throw new Error(`エスカレーションの生成と保存に失敗しました: ${error.message}`)
+    }
+    throw new Error("エスカレーションの生成と保存に失敗しました")
   }
 }

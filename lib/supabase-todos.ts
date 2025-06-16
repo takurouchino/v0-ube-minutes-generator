@@ -4,6 +4,7 @@ import { supabase } from "./supabase"
 export type Todo = {
   id: string
   minute_id: string
+  minute_sentence_id: string | null
   title: string
   description: string | null
   assignee_id: string | null
@@ -166,6 +167,7 @@ export async function saveTodos(
 
       return {
         minute_id: minuteId,
+        minute_sentence_id: todo.minute_sentence_id,
         title: todo.title,
         description: todo.description,
         assignee_id,
@@ -219,6 +221,7 @@ export async function getTodos(companyId: string): Promise<Todo[]> {
     return (data || []).map((item: any) => ({
       id: item.id as string,
       minute_id: item.minute_id as string,
+      minute_sentence_id: item.minute_sentence_id as string | null,
       title: item.title as string,
       description: item.description as string | null,
       assignee_id: item.assignee_id as string | null,
@@ -275,6 +278,7 @@ export async function getTodosByMinute(minuteId: string, companyId: string): Pro
     return (data || []).map((item) => ({
       id: item.id,
       minute_id: item.minute_id,
+      minute_sentence_id: item.minute_sentence_id as string | null,
       title: item.title,
       description: item.description,
       assignee_id: item.assignee_id,
@@ -324,6 +328,7 @@ export async function updateTodo(todo: Partial<Todo> & { id: string }, companyId
         status: todo.status,
         category: todo.category,
         completed_at: todo.status === "completed" ? new Date().toISOString() : null,
+        minute_sentence_id: todo.minute_sentence_id,
       })
       .eq("id", todo.id)
       .eq("company_id", companyId) // company_idでフィルタリング

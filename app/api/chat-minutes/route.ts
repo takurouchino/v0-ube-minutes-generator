@@ -3,10 +3,13 @@ import { getMinutes } from "@/lib/supabase-minutes"
 
 export async function POST(request: Request) {
   try {
-    const { question } = await request.json()
+    const { question, companyId } = await request.json()
 
     if (!question) {
       return NextResponse.json({ error: "質問は必須です" }, { status: 400 })
+    }
+    if (!companyId) {
+      return NextResponse.json({ error: "会社IDは必須です" }, { status: 400 })
     }
 
     // APIキーを環境変数から取得
@@ -25,7 +28,7 @@ export async function POST(request: Request) {
     }
 
     // 議事録データを取得
-    const minutes = await getMinutes()
+    const minutes = await getMinutes(companyId)
 
     if (!minutes || minutes.length === 0) {
       return NextResponse.json({

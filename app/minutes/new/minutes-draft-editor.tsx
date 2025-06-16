@@ -13,6 +13,7 @@ type Sentence = {
   text: string
   speaker: string
   role: string
+  importance: string
 }
 
 interface MinutesDraftEditorProps {
@@ -27,6 +28,11 @@ export function MinutesDraftEditor({
   onSentencesChange,
 }: MinutesDraftEditorProps) {
   const [sentences, setSentences] = useState<Sentence[]>(initialSentences)
+
+  // propsの変更を監視して内部stateを更新
+  useEffect(() => {
+    setSentences(initialSentences)
+  }, [initialSentences])
 
   // 発言が変更されたら親コンポーネントに通知
   useEffect(() => {
@@ -44,6 +50,7 @@ export function MinutesDraftEditor({
             ...sentence,
             speaker: speakerId,
             role: participant?.role || sentence.role,
+            importance: sentence.importance,
           }
         }
         return sentence
@@ -56,6 +63,17 @@ export function MinutesDraftEditor({
       sentences.map((sentence) => {
         if (sentence.id === id) {
           return { ...sentence, role }
+        }
+        return sentence
+      }),
+    )
+  }
+
+  const handleImportanceChange = (id: string, importance: string) => {
+    setSentences(
+      sentences.map((sentence) => {
+        if (sentence.id === id) {
+          return { ...sentence, importance }
         }
         return sentence
       }),
@@ -84,6 +102,7 @@ export function MinutesDraftEditor({
       text: "",
       speaker: "",
       role: "",
+      importance: "",
     }
 
     const newSentences = [...sentences]
@@ -91,11 +110,26 @@ export function MinutesDraftEditor({
     setSentences(newSentences)
   }
 
-  const roles = ["管理者", "品質管理", "生産管理", "安全管理", "社外コンサル"]
+  const speechTypes = [
+    "品質改善",
+    "品質不良",
+    "納期遅延",
+    "生産異常",
+    "クレーム対応",
+    "生産条件改善",
+    "ToDo"
+  ]
+
+  const importanceLevels = ["高", "中", "低"]
+
+  // 発言箱を必ず1つは表示する
+  const displaySentences = sentences.length === 0
+    ? [{ id: "dummy-1", text: "", speaker: "", role: "", importance: "" }]
+    : sentences;
 
   return (
     <div className="space-y-4">
-      {sentences.map((sentence, index) => (
+      {displaySentences.map((sentence, index) => (
         <Card key={sentence.id} className="relative">
           <CardContent className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4">
@@ -114,15 +148,29 @@ export function MinutesDraftEditor({
                   </SelectContent>
                 </Select>
 
-                <label className="text-sm font-medium">役割タグ</label>
+                <label className="text-sm font-medium">発言種類</label>
                 <Select value={sentence.role} onValueChange={(value) => handleRoleChange(sentence.id, value)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="役割を選択" />
+                    <SelectValue placeholder="発言種類を選択" />
                   </SelectTrigger>
                   <SelectContent>
-                    {roles.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
+                    {speechTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <label className="text-sm font-medium">重要度</label>
+                <Select value={sentence.importance} onValueChange={(value) => handleImportanceChange(sentence.id, value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="重要度を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {importanceLevels.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level}
                       </SelectItem>
                     ))}
                   </SelectContent>

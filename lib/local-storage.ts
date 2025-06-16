@@ -619,10 +619,11 @@ export function generateEscalationsFromMinute(minute: Minute): EscalationItem[] 
 
   // 技術的リスクの検出
   const technicalRiskPatterns = [
-    { pattern: /不良率.*?(\d+)%.*?(上昇|増加|悪化)/i, score: 85 },
-    { pattern: /故障|トラブル|停止|異常/i, score: 80 },
-    { pattern: /品質.*?(低下|悪化|問題)/i, score: 75 },
-    { pattern: /設備.*?(老朽化|メンテナンス)/i, score: 70 },
+    { pattern: /不良(率|品|が多い|が発生|が増加|が目立つ|が問題|の発生|の増加|の原因)?/i, score: 60 },
+    { pattern: /品質.*?(低下|悪化|問題|不良|課題|懸念|障害)/i, score: 60 },
+    { pattern: /停止|トラブル|異常|故障|エラー|バグ/i, score: 60 },
+    { pattern: /課題|問題|懸念|障害/i, score: 60 },
+    { pattern: /出荷停止|納期遅延|遅れ/i, score: 60 },
   ]
 
   for (const { pattern, score } of technicalRiskPatterns) {

@@ -9,17 +9,15 @@ export type MinuteSentence = {
   minute_id: string
   participant_id: string | null
   sentence_text: string
-  role_tag: string | null
+  speech_type: string | null
+  importance: string | null
   sentence_order: number
   created_at?: string
   updated_at?: string
-  // 結合データ（ビューから取得）
+  // 参加者情報（JOINで取得）
   participant_name?: string
   participant_position?: string
   participant_role?: string
-  minute_title?: string
-  minute_date?: string
-  minute_time?: string
 }
 
 // 現在のユーザーを取得
@@ -62,42 +60,37 @@ async function getCurrentUser() {
 
 // 発言データの取得（議事録IDで絞り込み）
 export async function getMinuteSentences(minuteId: string): Promise<MinuteSentence[]> {
-  const { companyId } = useAuth() // Get companyId from useAuth
-
+  const { companyId } = useAuth()
+  const safeCompanyId = companyId || ""
   try {
-    // 認証状態を確認
     const user = await getCurrentUser()
     if (!user) {
       console.warn("User not authenticated, but attempting to fetch data")
     }
-
+    // minute_sentences本体＋JOINで取得
     const { data, error } = await supabase
-      .from("minute_sentences_with_details")
-      .select("*")
+      .from("minute_sentences")
+      .select(`*, participant:participants(name,position,role)`) // JOIN
       .eq("minute_id", minuteId)
-      .eq("company_id", companyId)
+      .eq("company_id", safeCompanyId)
       .order("sentence_order")
-
     if (error) {
       console.error("Supabase error:", error)
       throw error
     }
-
     return (data || []).map((item: any) => ({
       id: item.id as string,
       minute_id: item.minute_id as string,
       participant_id: item.participant_id as string | null,
       sentence_text: item.sentence_text as string,
-      role_tag: item.role_tag as string | null,
+      speech_type: item.speech_type as string | null,
+      importance: item.importance as string | null,
       sentence_order: item.sentence_order as number,
       created_at: item.created_at as string,
       updated_at: item.updated_at as string,
-      participant_name: item.participant_name as string | undefined,
-      participant_position: item.participant_position as string | undefined,
-      participant_role: item.participant_role as string | undefined,
-      minute_title: item.minute_title as string | undefined,
-      minute_date: item.minute_date as string | undefined,
-      minute_time: item.minute_time as string | undefined,
+      participant_name: item.participant?.name,
+      participant_position: item.participant?.position,
+      participant_role: item.participant?.role,
     }))
   } catch (error) {
     console.error("Error fetching minute sentences:", error)
@@ -111,12 +104,12 @@ export async function saveMinuteSentences(
   sentences: Array<{
     participant_id: string | null
     sentence_text: string
-    role_tag: string | null
+    speech_type: string | null
+    importance: string | null
     sentence_order: number
   }>,
+  companyId: string, // undefined不可に変更
 ): Promise<boolean> {
-  const { companyId } = useAuth() // Get companyId from useAuth
-
   try {
     // 認証状態を確認
     const user = await getCurrentUser()
@@ -126,10 +119,8 @@ export async function saveMinuteSentences(
 
     // 既存の発言データを削除（関数を使用）
     try {
-      const { error: deleteError } = await supabase.rpc("delete_minute_sentences", {
-        p_minute_id: minuteId,
-        p_company_id: companyId, // Pass company_id to the function
-      })
+      const rpcParams: any = { p_minute_id: minuteId, p_company_id: companyId }
+      const { error: deleteError } = await supabase.rpc("delete_minute_sentences", rpcParams)
 
       if (deleteError) {
         console.error("Delete error:", deleteError)
@@ -154,9 +145,10 @@ export async function saveMinuteSentences(
         minute_id: minuteId,
         participant_id: sentence.participant_id,
         sentence_text: sentence.sentence_text,
-        role_tag: sentence.role_tag,
+        speech_type: sentence.speech_type,
+        importance: sentence.importance,
         sentence_order: sentence.sentence_order,
-        company_id: companyId, // Add company_id to the inserted data
+        company_id: companyId,
       }))
 
       const { error: insertError } = await supabase.from("minute_sentences").insert(sentencesToInsert)
@@ -197,7 +189,8 @@ export async function addMinuteSentence(sentence: {
   minute_id: string
   participant_id: string | null
   sentence_text: string
-  role_tag: string | null
+  speech_type: string | null
+  importance: string | null
   sentence_order: number
 }): Promise<MinuteSentence | null> {
   const { companyId } = useAuth()
@@ -227,7 +220,8 @@ export async function addMinuteSentence(sentence: {
           minute_id: sentence.minute_id,
           participant_id: sentence.participant_id,
           sentence_text: sentence.sentence_text,
-          role_tag: sentence.role_tag,
+          speech_type: sentence.speech_type,
+          importance: sentence.importance,
           sentence_order: sentence.sentence_order,
         }
       }
@@ -241,7 +235,8 @@ export async function addMinuteSentence(sentence: {
       minute_id: data.minute_id as string,
       participant_id: data.participant_id as string | null,
       sentence_text: data.sentence_text as string,
-      role_tag: data.role_tag as string | null,
+      speech_type: data.speech_type as string | null,
+      importance: data.importance as string | null,
       sentence_order: data.sentence_order as number,
       created_at: data.created_at as string,
       updated_at: data.updated_at as string,
@@ -267,7 +262,8 @@ export async function updateMinuteSentence(sentence: MinuteSentence): Promise<bo
       .update({
         participant_id: sentence.participant_id,
         sentence_text: sentence.sentence_text,
-        role_tag: sentence.role_tag,
+        speech_type: sentence.speech_type,
+        importance: sentence.importance,
         sentence_order: sentence.sentence_order,
       })
       .eq("id", sentence.id)

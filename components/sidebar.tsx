@@ -96,12 +96,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex w-64 flex-col border-r bg-background h-screen">
-      <div className="flex h-16 items-center border-b px-4">
-        <Link href="/" className="text-xl font-bold">
-          UBE Minutes
-        </Link>
-      </div>
+    <aside className="flex w-64 flex-col border-r bg-background sticky top-0 min-h-screen">
       <div className="flex flex-col overflow-auto flex-1">
         <div className="flex flex-col gap-2 p-4">
           {routes.map((route) => (

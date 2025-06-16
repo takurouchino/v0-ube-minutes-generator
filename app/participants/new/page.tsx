@@ -110,6 +110,7 @@ export default function NewParticipantPage() {
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 placeholder="例: 開発部"
+                required
               />
             </div>
 

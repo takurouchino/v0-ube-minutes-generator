@@ -26,8 +26,11 @@ import {
 import { AddParticipantModal } from "@/components/add-participant-modal"
 import { useAuth } from "@/lib/auth-context" // useAuthをインポート
 import { supabase } from "@/lib/supabase"
+import { ParticipantRoleModal } from "@/components/participant-role-modal"
+import { use } from "react"
 
-export default function ThemeEditPage({ params }: { params: { id: string } }) {
+export default function ThemeEditPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const { toast } = useToast()
   const { userProfile } = useAuth() // userProfileを取得
@@ -51,6 +54,9 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null)
+  const [isEditRoleModalOpen, setIsEditRoleModalOpen] = useState(false)
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -61,7 +67,7 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
         }
 
         const themes = await getThemes(userProfile.company_id)
-        const foundTheme = themes.find((t) => t.id === params.id)
+        const foundTheme = themes.find((t) => t.id === id)
 
         if (foundTheme) {
           setTheme(foundTheme)
@@ -108,7 +114,7 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
     }
 
     loadData()
-  }, [params.id, router, userProfile])
+  }, [id, router, userProfile])
 
   const toggleParticipant = (participantId: string) => {
     setSelectedParticipants((prev) =>
@@ -285,6 +291,25 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
     }
   }
 
+  const handleOpenEditRoleModal = (participant: Participant) => {
+    setSelectedParticipant(participant)
+    setIsEditRoleModalOpen(true)
+  }
+
+  const handleUpdateRole = (participantId: string, newRole: string) => {
+    setThemeParticipants((prev) =>
+      prev.map((p) => {
+        if (p.id === participantId) {
+          return {
+            ...p,
+            theme_roles: { ...p.theme_roles, [theme?.id ?? ""]: newRole },
+          }
+        }
+        return p
+      })
+    )
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto flex items-center justify-center h-[50vh]">
@@ -450,10 +475,19 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
                           <div>
                             <span className="font-medium">{participant.name}</span>
                             <div className="text-xs text-muted-foreground">
-                              {participant.position} - {participant.role}
+                              {participant.position} - {themeParticipants.find((p) => p.id === participant.id)?.theme_roles?.[theme?.id ?? ""] || "一般参加者"}
                             </div>
                           </div>
                         </Label>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => handleOpenEditRoleModal(participant)}
+                          className="ml-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                        >
+                          役割変更
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -499,6 +533,16 @@ export default function ThemeEditPage({ params }: { params: { id: string } }) {
         onOpenChange={setAddParticipantModalOpen}
         onParticipantAdded={handleParticipantAdded}
       />
+
+      {selectedParticipant && (
+        <ParticipantRoleModal
+          themeId={theme?.id ?? ""}
+          participant={selectedParticipant}
+          isOpen={isEditRoleModalOpen}
+          onClose={() => setIsEditRoleModalOpen(false)}
+          onUpdateRole={handleUpdateRole}
+        />
+      )}
     </div>
   )
 }

@@ -23,7 +23,7 @@ import { Label } from "@/components/ui/label"
 interface AIDraftModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onDraftGenerated: (draft: string) => void
+  onDraftGenerated: (draft: string, sentences: any[]) => void
   selectedParticipants: string[]
 }
 
@@ -274,7 +274,7 @@ export function AIDraftModal({ open, onOpenChange, onDraftGenerated, selectedPar
       }
 
       // 生成された議事録を親コンポーネントに渡す
-      onDraftGenerated(data.draft)
+      onDraftGenerated(data.draft, data.sentences)
 
       // モーダルを閉じる
       onOpenChange(false)

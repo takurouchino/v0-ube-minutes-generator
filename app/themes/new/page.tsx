@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { addTheme } from "@/lib/supabase-storage"
+import { addTheme, addParticipantToTheme, getParticipants } from "@/lib/supabase-storage"
 import { supabase } from "@/lib/supabase"
 import { Upload, File, X } from "lucide-react"
 import { v4 as uuidv4 } from "uuid"
+import { AddParticipantWithRoleModal } from "@/components/add-participant-with-role-modal"
+import { Participant } from "@/lib/supabase-storage"
 
 export default function NewThemePage() {
   const router = useRouter()
@@ -32,9 +34,28 @@ export default function NewThemePage() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 参加者関連の状態
+  const [participantsWithRole, setParticipantsWithRole] = useState<{
+    id: string
+    name: string
+    position: string
+    role: string
+    department: string
+    themes: string[]
+    theme_roles: { [themeId: string]: string }
+    created_at?: string
+    updated_at?: string
+    selectedRole: string
+  }[]>([])
+  const [addParticipantModalOpen, setAddParticipantModalOpen] = useState(false)
+  const [editRoleIndex, setEditRoleIndex] = useState<number | null>(null)
+  const [editRoleValue, setEditRoleValue] = useState<string>("")
+
+  const [allParticipants, setAllParticipants] = useState<Participant[]>([])
+
   // ユーザープロファイルを取得
   useEffect(() => {
-    async function getUserProfile() {
+    async function getUserProfileAndParticipants() {
       try {
         const {
           data: { session },
@@ -56,6 +77,9 @@ export default function NewThemePage() {
           if (data) {
             console.log("User profile loaded:", data)
             setUserProfile(data)
+            // 会社IDが取得できたら参加者一覧も取得
+            const participants = await getParticipants(data.company_id)
+            setAllParticipants(participants)
           } else {
             console.error("No user profile found")
             toast({
@@ -84,7 +108,7 @@ export default function NewThemePage() {
       }
     }
 
-    getUserProfile()
+    getUserProfileAndParticipants()
   }, [toast])
 
   // ファイルアップロード処理
@@ -169,6 +193,37 @@ export default function NewThemePage() {
     }
   }
 
+  // 参加者追加モーダルのコールバック
+  const handleAddParticipant = (participant: Participant) => {
+    setParticipantsWithRole((prev) => [
+      ...prev,
+      {
+        ...participant,
+        selectedRole: participant.theme_roles["new"] || Object.values(participant.theme_roles)[0] || "一般参加者",
+      },
+    ])
+  }
+
+  // 参加者削除
+  const handleRemoveParticipant = (index: number) => {
+    setParticipantsWithRole((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  // 役割編集
+  const handleEditRole = (index: number) => {
+    setEditRoleIndex(index)
+    setEditRoleValue(participantsWithRole[index].selectedRole)
+  }
+  const handleSaveRole = () => {
+    if (editRoleIndex !== null) {
+      setParticipantsWithRole((prev) =>
+        prev.map((p, i) => (i === editRoleIndex ? { ...p, selectedRole: editRoleValue } : p)),
+      )
+      setEditRoleIndex(null)
+      setEditRoleValue("")
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -213,6 +268,11 @@ export default function NewThemePage() {
 
       if (theme) {
         console.log("Theme created successfully:", theme)
+
+        // 参加者＋役割をDBに保存
+        for (const p of participantsWithRole) {
+          await addParticipantToTheme(theme.id, p.id, p.selectedRole, userProfile.company_id)
+        }
 
         // 明示的な成功メッセージを表示
         toast({
@@ -370,6 +430,43 @@ export default function NewThemePage() {
               </div>
             </div>
 
+            {/* 参加者設定セクション */}
+            <div className="space-y-2">
+              <Label>参加者設定</Label>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAddParticipantModalOpen(true)}>
+                参加者追加
+              </Button>
+              {participantsWithRole.length > 0 && (
+                <div className="mt-2 border rounded-md p-2">
+                  {participantsWithRole.map((p, i) => (
+                    <div key={p.id} className="flex items-center justify-between py-1">
+                      <div>
+                        <span className="font-medium">{p.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{p.position}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">役割: {editRoleIndex === i ? (
+                          <>
+                            <Input
+                              value={editRoleValue}
+                              onChange={e => setEditRoleValue(e.target.value)}
+                              className="w-32 inline-block mx-2"
+                            />
+                            <Button type="button" size="xs" onClick={handleSaveRole} className="ml-1">保存</Button>
+                            <Button type="button" size="xs" variant="outline" onClick={() => setEditRoleIndex(null)} className="ml-1">キャンセル</Button>
+                          </>
+                        ) : (
+                          <>
+                            {p.selectedRole}
+                            <Button type="button" size="xs" variant="ghost" onClick={() => handleEditRole(i)} className="ml-2">役割編集</Button>
+                          </>
+                        )}</span>
+                      </div>
+                      <Button type="button" size="xs" variant="ghost" onClick={() => handleRemoveParticipant(i)} className="text-red-500">削除</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end space-x-2">
               <Button type="button" variant="outline" onClick={() => router.push("/themes")} disabled={isSubmitting}>
                 キャンセル
@@ -381,6 +478,14 @@ export default function NewThemePage() {
           </form>
         </CardContent>
       </Card>
+      <AddParticipantWithRoleModal
+        themeId={undefined}
+        isOpen={addParticipantModalOpen}
+        onClose={() => setAddParticipantModalOpen(false)}
+        onAddParticipant={handleAddParticipant}
+        existingParticipantIds={participantsWithRole.map((p) => p.id)}
+        availableParticipants={allParticipants}
+      />
     </div>
   )
 }

@@ -260,8 +260,8 @@ export default function SearchPage() {
 
   return (
     <div className="container mx-auto">
-      <div className="flex items-center mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">検索・履歴</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">検索・履歴</h1>
       </div>
 
       <Card className="mb-6">
@@ -349,10 +349,9 @@ export default function SearchPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>会議テーマ</TableHead>
-                  <TableHead>日付</TableHead>
-                  <TableHead className="hidden md:table-cell">カテゴリ</TableHead>
-                  <TableHead className="hidden md:table-cell">参加者</TableHead>
+                  <TableHead className="min-w-[130px]">会議テーマ</TableHead>
+                  <TableHead className="min-w-[130px]">日付</TableHead>
+                  <TableHead className="min-w-[130px] hidden md:table-cell">参加者</TableHead>
                   <TableHead className="hidden md:table-cell">キーワード</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
@@ -360,16 +359,13 @@ export default function SearchPage() {
               <TableBody>
                 {searchResults.map((result) => (
                   <TableRow key={result.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium min-w-[130px]">
                       <Link href={`/minutes/summary/${result.id}`} className="hover:underline">
                         {result.title}
                       </Link>
                     </TableCell>
-                    <TableCell>{result.date}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <Badge variant="outline">{getThemeName(result.theme_id)}</Badge>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
+                    <TableCell className="min-w-[130px]">{result.date}</TableCell>
+                    <TableCell className="min-w-[130px] hidden md:table-cell">
                       <div className="flex flex-wrap gap-1">
                         {result.participant_details && result.participant_details.length > 0 ? (
                           <>

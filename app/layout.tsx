@@ -26,10 +26,16 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <AuthGuard>
-              <div className="flex min-h-screen">
-                <Sidebar />
-                <div className="flex flex-col flex-1">
-                  <main className="flex-1">{children}</main>
+              <div className="flex flex-col min-h-screen">
+                {/* Header */}
+                <header className="h-[60px] w-full flex items-center border-b px-6 bg-background">
+                  <span className="text-2xl font-bold">UBE Minutes</span>
+                </header>
+                <div className="flex flex-1 min-h-0">
+                  <Sidebar />
+                  <div className="flex flex-col flex-1">
+                    <main className="flex-1">{children}</main>
+                  </div>
                 </div>
               </div>
             </AuthGuard>

@@ -142,32 +142,16 @@ export function AddParticipantModal({ open, onOpenChange, onParticipantAdded }: 
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="role" className="text-right">
-                役割
-              </Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger id="role" className="col-span-3">
-                  <SelectValue placeholder="役割を選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="管理者">管理者</SelectItem>
-                  <SelectItem value="品質管理">品質管理</SelectItem>
-                  <SelectItem value="生産管理">生産管理</SelectItem>
-                  <SelectItem value="安全管理">安全管理</SelectItem>
-                  <SelectItem value="社外コンサル">社外コンサル</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="department" className="text-right">
-                所属部署
+                部署
               </Label>
               <Input
                 id="department"
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
                 className="col-span-3"
-                placeholder="例: 製造部"
+                placeholder="例: 開発部"
+                required
               />
             </div>
           </div>

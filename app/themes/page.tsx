@@ -48,7 +48,7 @@ export default function ThemesPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">テーマ管理</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">テーマ管理</h1>
         <Button asChild>
           <Link href="/themes/new">
             <Plus className="mr-2 h-4 w-4" />

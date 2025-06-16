@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,10 +9,13 @@ import { ArrowLeft, Edit, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { getParticipants, getThemes, deleteParticipant, type Participant, type Theme } from "@/lib/supabase-storage"
 import { useToast } from "@/components/ui/use-toast"
+import { useAuth } from "@/lib/auth-context"
 
-export default function ParticipantDetailPage({ params }: { params: { id: string } }) {
+export default function ParticipantDetailPage({ params }: { params: any }) {
   const router = useRouter()
   const { toast } = useToast()
+  const { id } = React.use(params) as { id: string }
+  const { userProfile } = useAuth()
   const [participant, setParticipant] = useState<Participant | null>(null)
   const [themes, setThemes] = useState<Theme[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,8 +27,8 @@ export default function ParticipantDetailPage({ params }: { params: { id: string
         setLoading(true)
 
         // 参加者データを取得
-        const participants = await getParticipants()
-        const foundParticipant = participants.find((p) => p.id === params.id)
+        const participants = await getParticipants(userProfile?.company_id)
+        const foundParticipant = participants.find((p) => p.id === id)
 
         if (!foundParticipant) {
           setError("参加者が見つかりませんでした")
@@ -36,7 +39,7 @@ export default function ParticipantDetailPage({ params }: { params: { id: string
         setParticipant(foundParticipant)
 
         // テーマデータを取得
-        const themesData = await getThemes()
+        const themesData = await getThemes(userProfile?.company_id)
         setThemes(themesData)
       } catch (err) {
         console.error("Failed to load participant data:", err)
@@ -46,8 +49,10 @@ export default function ParticipantDetailPage({ params }: { params: { id: string
       }
     }
 
-    loadData()
-  }, [params.id, router])
+    if (userProfile?.company_id) {
+      loadData()
+    }
+  }, [id, router, userProfile])
 
   // テーマIDからテーマ名を取得
   const getThemeName = (themeId: string) => {
@@ -135,11 +140,6 @@ export default function ParticipantDetailPage({ params }: { params: { id: string
             <div>
               <h3 className="text-sm font-medium">役職</h3>
               <p>{participant.position || "未設定"}</p>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-medium">役割</h3>
-              <Badge variant="outline">{participant.role || "未設定"}</Badge>
             </div>
 
             <div>

@@ -52,6 +52,7 @@ export default function TodosPage() {
     priority: "medium" as const,
     status: "pending" as const,
     category: "",
+    minute_sentence_id: "",
   })
 
   const { userProfile } = useAuth()
@@ -110,6 +111,7 @@ export default function TodosPage() {
       priority: todo.priority,
       status: todo.status,
       category: todo.category || "",
+      minute_sentence_id: todo.minute_sentence_id || "",
     })
   }
 
@@ -130,6 +132,7 @@ export default function TodosPage() {
         priority: editForm.priority,
         status: editForm.status,
         category: editForm.category,
+        minute_sentence_id: editForm.minute_sentence_id,
       }
 
       const success = await updateTodo(updatedTodo, userProfile.company_id)
@@ -294,7 +297,7 @@ export default function TodosPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">ToDo管理</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">ToDo管理</h1>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="mr-2 h-4 w-4" />
           更新
