@@ -29,7 +29,7 @@ export default function RootLayout({
               <div className="flex flex-col min-h-screen">
                 {/* Header */}
                 <header className="h-[60px] w-full flex items-center border-b px-6 bg-background">
-                  <span className="text-2xl font-bold">UBE Minutes</span>
+                  <span className="text-2xl font-bold">Minutes Generator</span>
                 </header>
                 <div className="flex flex-1 min-h-0">
                   <Sidebar />
