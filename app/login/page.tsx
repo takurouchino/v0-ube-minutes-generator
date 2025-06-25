@@ -138,7 +138,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-center text-2xl">UBE 議事録ジェネレーター</CardTitle>
+          <CardTitle className="text-center text-2xl">議事録ジェネレーター</CardTitle>
           <CardDescription className="text-center">ログインまたは新規登録してください</CardDescription>
         </CardHeader>
         <CardContent>

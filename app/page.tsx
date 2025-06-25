@@ -18,7 +18,7 @@ export default function Home() {
   return (
     <div className="container mx-auto">
       <div className="flex flex-col items-center justify-center space-y-6 text-center py-8">
-        <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">UBE議事録ジェネレーター</h1>
+        <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">議事録ジェネレーター</h1>
         <p className="max-w-[700px] text-gray-500 md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed dark:text-gray-400">
           会議テーマごとに議事録を構造化・データベース化し、発言分離・タグ付け・AIサマリ生成・承認フローまでをワンストップで行います。
         </p>
