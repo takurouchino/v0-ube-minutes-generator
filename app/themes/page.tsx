@@ -13,21 +13,21 @@ export default function ThemesPage() {
   const { toast } = useToast()
   const { userProfile } = useAuth() // useAuthを使用して会社IDを取得
   const [themes, setThemes] = useState<Theme[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // 初期値をfalseに変更
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadThemes = async () => {
       try {
         setLoading(true)
-        console.log("Loading themes...")
+        console.log("🔄 Loading themes...", { companyId: userProfile?.company_id })
         // 会社IDを引数として渡す
         const storedThemes = await getThemes(userProfile?.company_id)
-        console.log("Themes loaded:", storedThemes)
+        console.log("✅ Themes loaded:", storedThemes)
         setThemes(storedThemes || [])
         setError(null)
       } catch (error) {
-        console.error("Failed to load themes:", error)
+        console.error("❌ Failed to load themes:", error)
         setError("テーマの読み込みに失敗しました。")
         toast({
           title: "エラー",
@@ -36,12 +36,19 @@ export default function ThemesPage() {
         })
       } finally {
         setLoading(false)
+        console.log("🏁 Themes loading finished")
       }
     }
 
     // userProfileが読み込まれたら実行
     if (userProfile?.company_id) {
+      console.log("📡 Starting themes loading process...")
       loadThemes()
+    } else if (userProfile !== undefined) {
+      // userProfileが確定しているが company_id がない場合
+      console.log("⚠️ UserProfile loaded but no company_id")
+      setLoading(false)
+      setError("会社情報が設定されていません。")
     }
   }, [toast, userProfile]) // userProfileを依存配列に追加
 
