@@ -36,7 +36,20 @@ export default function LoginPage() {
     const fetchCompanies = async () => {
       try {
         setLoadingCompanies(true)
-        const response = await fetch("/api/public/companies")
+        console.log("会社データを取得中...")
+
+        // 10秒でタイムアウト設定
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => {
+          console.log("会社データ取得がタイムアウトしました")
+          controller.abort()
+        }, 10000)
+
+        const response = await fetch("/api/public/companies", {
+          signal: controller.signal
+        })
+
+        clearTimeout(timeoutId)
 
         if (!response.ok) {
           throw new Error("会社データの取得に失敗しました")
@@ -58,14 +71,24 @@ export default function LoginPage() {
           console.log("認証コンテキストの会社データを使用します")
           setCompanies(authCompanies)
         } else {
+          console.log("フォールバック: 空の会社リストを設定")
           setCompanies([])
         }
       } finally {
         setLoadingCompanies(false)
+        console.log("会社データ取得処理完了")
       }
     }
 
-    fetchCompanies()
+    // 5秒後に強制終了する安全装置
+    const safetyTimeout = setTimeout(() => {
+      console.log("安全装置: 会社データローディングを強制終了")
+      setLoadingCompanies(false)
+    }, 5000)
+
+    fetchCompanies().finally(() => {
+      clearTimeout(safetyTimeout)
+    })
   }, [authCompanies])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -125,8 +148,9 @@ export default function LoginPage() {
     }
   }
 
-  // 認証コンテキストのロード中または会社データのロード中はローディング表示
-  if (authLoading || loadingCompanies) {
+  // 認証コンテキストのロード中はローディング表示
+  // 会社データのロードは10秒でタイムアウト
+  if (authLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
