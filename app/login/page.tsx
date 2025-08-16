@@ -31,6 +31,23 @@ export default function LoginPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loadingCompanies, setLoadingCompanies] = useState(true)
 
+  // 🔍 デバッグ用: コンポーネント初期化ログ
+  console.log("🚀 LoginPage component initialized")
+  console.log("📅 Deploy Timestamp:", new Date().toISOString())
+  console.log("🌐 Environment:", {
+    hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'server'
+  })
+  console.log("📊 Initial State:", {
+    authLoading,
+    loadingCompanies,
+    authCompanies,
+    companies
+  })
+  
+  // バージョン確認用のユニークID
+  console.log("🔢 Code Version: SPINNER_FIX_v2.0 - " + Date.now())
+
   // 公開APIから会社データを取得
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -82,14 +99,37 @@ export default function LoginPage() {
 
     // 5秒後に強制終了する安全装置
     const safetyTimeout = setTimeout(() => {
-      console.log("安全装置: 会社データローディングを強制終了")
+      console.log("⏰ 安全装置: 会社データローディングを強制終了")
+      console.log("🔧 setLoadingCompanies(false) - Safety timeout triggered")
       setLoadingCompanies(false)
     }, 5000)
 
+    console.log("📡 Starting fetchCompanies process...")
     fetchCompanies().finally(() => {
+      console.log("🏁 fetchCompanies process completed")
       clearTimeout(safetyTimeout)
     })
   }, [authCompanies])
+
+  // 🔍 デバッグ用: Auth状態の変化を監視
+  useEffect(() => {
+    console.log("🔐 Auth State Changed:", {
+      authLoading,
+      hasUser: !!authCompanies,
+      authCompaniesLength: authCompanies?.length || 0,
+      timestamp: new Date().toISOString()
+    })
+  }, [authLoading, authCompanies])
+
+  // 🔍 デバッグ用: Companies状態の変化を監視
+  useEffect(() => {
+    console.log("🏢 Companies State Changed:", {
+      loadingCompanies,
+      companiesLength: companies.length,
+      companies: companies.slice(0, 3), // 最初の3つだけ表示
+      timestamp: new Date().toISOString()
+    })
+  }, [loadingCompanies, companies])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,15 +188,27 @@ export default function LoginPage() {
     }
   }
 
+  // 🔍 デバッグ用: レンダリング条件チェック
+  console.log("🎯 Render Check:", {
+    authLoading: authLoading,
+    loadingCompanies: loadingCompanies,
+    shouldShowSpinner: authLoading,
+    shouldShowLoginForm: !authLoading,
+    timestamp: new Date().toISOString()
+  })
+
   // 認証コンテキストのロード中はローディング表示
   // 会社データのロードは10秒でタイムアウト
   if (authLoading) {
+    console.log("🔄 SHOWING SPINNER - authLoading is true")
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
+
+  console.log("✅ SHOWING LOGIN FORM - authLoading is false")
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
