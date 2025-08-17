@@ -120,7 +120,7 @@ export default function ApprovalPage() {
             戻る
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">承認フロー</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">承認フロー</h1>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">

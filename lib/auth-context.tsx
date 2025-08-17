@@ -41,19 +41,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
+  const [initializing, setInitializing] = useState(true)
 
   // companyIdを計算
   const companyId = userProfile?.company_id
 
   useEffect(() => {
     let mounted = true
+    let retryCount = 0
+    const maxRetries = 3
 
-    // 初期認証状態の確認
+    // ブラウザストレージからのセッション復元を試行
+    const restoreSessionFromStorage = async () => {
+      if (typeof window === 'undefined') return null
+      
+      try {
+        const storedToken = localStorage.getItem('sb-auth-token')
+        if (storedToken) {
+          const tokenData = JSON.parse(storedToken)
+          if (tokenData.access_token && tokenData.expires_at) {
+            const expiresAt = new Date(tokenData.expires_at * 1000)
+            const now = new Date()
+            
+            // トークンが有効期限内の場合
+            if (expiresAt > now) {
+              console.log('Valid session found in storage, restoring...')
+              return tokenData
+            } else {
+              console.log('Stored session expired, clearing...')
+              localStorage.removeItem('sb-auth-token')
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error restoring session from storage:', error)
+        localStorage.removeItem('sb-auth-token')
+      }
+      
+      return null
+    }
+
+    // 初期認証状態の確認（リトライ機能付き）
     const getInitialSession = async () => {
       try {
+        // まずローカルストレージから復元を試行
+        const storedSession = await restoreSessionFromStorage()
+        
+        if (storedSession && mounted) {
+          console.log('Session restored from storage')
+          // ストレージからセッションを復元できた場合は一旦設定
+          setLoading(false)
+          setInitializing(false)
+          
+          // バックグラウンドでSupabaseからセッション確認
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (mounted) {
+              setUser(session?.user ?? null)
+              if (session?.user) {
+                loadUserProfile(session.user.id)
+              }
+              loadCompanies()
+            }
+          }).catch(console.error)
+          
+          return
+        }
+
+        // ストレージから復元できない場合はSupabaseから取得
         const {
           data: { session },
         } = await supabase.auth.getSession()
+        
         if (mounted) {
           setUser(session?.user ?? null)
 
@@ -65,42 +123,154 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         console.error("Error during initialization:", error)
+        
+        // リトライロジック
+        if (retryCount < maxRetries && mounted) {
+          retryCount++
+          console.log(`Retrying authentication... (${retryCount}/${maxRetries})`)
+          setTimeout(() => getInitialSession(), 1000 * retryCount)
+          return
+        }
+        
+        // ネットワークエラーやセッション期限切れの場合、ユーザーをnullに設定
+        if (mounted) {
+          setUser(null)
+          setUserProfile(null)
+        }
       } finally {
         if (mounted) {
           setLoading(false)
+          setInitializing(false)
         }
       }
     }
 
-    getInitialSession()
+    // タイムアウト機能を追加（15秒で強制終了）
+    const initTimeout = setTimeout(() => {
+      if (mounted && (loading || initializing)) {
+        console.warn("Authentication initialization timeout - forcing completion")
+        setLoading(false)
+        setInitializing(false)
+        setUser(null)
+        setUserProfile(null)
+      }
+    }, 15000)
+
+    getInitialSession().finally(() => {
+      clearTimeout(initTimeout)
+    })
 
     // 認証状態の変更を監視
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
-        setUser(session?.user ?? null)
-
-        if (session?.user) {
-          await loadUserProfile(session.user.id)
+        console.log("Auth state change:", event, session?.user?.id || "no user")
+        
+        // セッション期限切れやログアウト時の処理
+        if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          if (event === 'SIGNED_OUT') {
+            console.log('User signed out, clearing local data')
+            setUser(null)
+            setUserProfile(null)
+          } else if (event === 'TOKEN_REFRESHED' && session) {
+            console.log('Token refreshed, updating user data')
+            setUser(session.user)
+            await loadUserProfile(session.user.id)
+          }
         } else {
-          setUserProfile(null)
+          setUser(session?.user ?? null)
+
+          if (session?.user) {
+            await loadUserProfile(session.user.id)
+          } else {
+            setUserProfile(null)
+          }
         }
 
-        setLoading(false)
+        // 初期化が完了していない場合のみloadingを変更
+        if (initializing) {
+          setLoading(false)
+          setInitializing(false)
+        }
       }
     })
 
     return () => {
       mounted = false
+      clearTimeout(initTimeout)
       subscription.unsubscribe()
     }
   }, [])
 
+  // ブラウザタブ間でのセッション変更を監視
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sb-auth-token') {
+        console.log('Auth token changed in another tab')
+        
+        // 他のタブでログアウトされた場合
+        if (!e.newValue && user) {
+          console.log('User logged out in another tab')
+          setUser(null)
+          setUserProfile(null)
+        }
+        // 他のタブでログインされた場合
+        else if (e.newValue && !user) {
+          console.log('User logged in in another tab')
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+              setUser(session.user)
+              loadUserProfile(session.user.id)
+            }
+          }).catch(console.error)
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [user])
+
+  // ページの可視性変更時にセッション状態を確認
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !loading) {
+        console.log('Page became visible, checking session validity')
+        
+        // ページが表示された時にセッションの有効性を確認
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session && user) {
+            console.log('Session expired while page was hidden')
+            setUser(null)
+            setUserProfile(null)
+          } else if (session && !user) {
+            console.log('Session restored while page was hidden')
+            setUser(session.user)
+            loadUserProfile(session.user.id)
+          }
+        }).catch(console.error)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [user, loading])
+
   const loadUserProfile = async (userId: string) => {
     try {
-      // まず直接user_profilesテーブルから取得を試みる
-      const { data: profileData, error: profileError } = await supabase
+      // タイムアウト機能付きでプロファイルを取得
+      const profilePromise = supabase
         .from("user_profiles")
         .select(`
           id, 
@@ -112,6 +282,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         `)
         .eq("id", userId)
         .single()
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Profile load timeout")), 5000)
+      )
+
+      const { data: profileData, error: profileError } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]) as { data: any; error: any }
 
       if (profileError) {
         if (profileError.code !== "PGRST116") {
@@ -277,3 +456,4 @@ export function useAuth() {
   }
   return context
 }
+

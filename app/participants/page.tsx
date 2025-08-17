@@ -8,7 +8,7 @@ export default function ParticipantsPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-[15px] mr-[15px]">参加者マスタ</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">参加者マスタ</h1>
         <Button asChild>
           <Link href="/participants/new">
             <PlusCircle className="mr-2 h-4 w-4" />

@@ -16,7 +16,41 @@ export function getSupabaseClient() {
   }
 
   if (!supabaseInstance) {
-    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey)
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        // セッションの永続化設定を強化
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        storageKey: 'sb-auth-token',
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        // セッション自動リフレッシュの設定
+        flowType: 'pkce'
+      },
+      // リアルタイム接続の設定
+      realtime: {
+        params: {
+          eventsPerSecond: 10
+        }
+      },
+      // グローバル設定
+      global: {
+        headers: {
+          'X-Client-Info': 'ube-minutes-generator'
+        }
+      }
+    })
+
+    // ブラウザタブ間でのセッション同期を強化
+    if (typeof window !== 'undefined') {
+      // storageイベントを監視してタブ間でセッション変更を同期
+      window.addEventListener('storage', (e) => {
+        if (e.key === 'sb-auth-token' && e.newValue !== e.oldValue) {
+          console.log('Session changed in another tab, refreshing auth state')
+          supabaseInstance?.auth.getSession()
+        }
+      })
+    }
   }
 
   return supabaseInstance

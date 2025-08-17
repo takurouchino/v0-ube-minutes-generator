@@ -133,7 +133,7 @@ export default function ChatPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-[15px] mr-[15px]">AI議事録チャット</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">AI議事録チャット</h1>
         <Button variant="ghost" size="sm" onClick={handleClearChat}>
           <RefreshCw className="mr-2 h-4 w-4" />
           チャットをクリア

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ import type { Company } from "@/lib/auth-context"
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { signIn, signUp, companies: authCompanies, loading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState("login")
   const [email, setEmail] = useState("")
@@ -26,6 +27,9 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [setupRequired, setSetupRequired] = useState(false)
+  
+  // タイムアウトパラメータをチェック
+  const isTimeout = searchParams?.get('timeout') === 'true'
 
   // 公開APIから会社データを取得するための状態
   const [companies, setCompanies] = useState<Company[]>([])
@@ -218,6 +222,12 @@ export default function LoginPage() {
           <CardDescription className="text-center">ログインまたは新規登録してください</CardDescription>
         </CardHeader>
         <CardContent>
+          {isTimeout && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>セッションがタイムアウトしました。再度ログインしてください。</AlertDescription>
+            </Alert>
+          )}
           {setupRequired ? (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle className="h-4 w-4" />

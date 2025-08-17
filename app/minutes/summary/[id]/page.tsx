@@ -277,7 +277,7 @@ export default function SummaryPage({ params }: { params: { id: string } }) {
             戻る
           </Link>
         </Button>
-        <h1 className="text-3xl font-bold tracking-tight">AIサマリ確認</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">AIサマリ確認</h1>
       </div>
 
       <Card className="mb-6">

@@ -225,7 +225,7 @@ export default function DictionaryPage() {
   return (
     <div className="container mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">カスタム辞書管理</h1>
+        <h1 className="text-3xl font-bold tracking-tight mt-[15px] ml-[15px]">カスタム辞書管理</h1>
         <div className="flex gap-2">
           <Button variant="outline" onClick={loadData}>
             <RefreshCw className="mr-2 h-4 w-4" />
