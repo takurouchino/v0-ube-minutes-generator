@@ -284,7 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Profile load timeout")), 5000)
+        setTimeout(() => reject(new Error("Profile load timeout")), 10000)
       )
 
       const { data: profileData, error: profileError } = await Promise.race([
@@ -314,6 +314,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error("Error loading user profile:", error)
+      // タイムアウトエラーの場合は警告レベルに下げる
+      if (error instanceof Error && error.message.includes("timeout")) {
+        console.warn("Profile load timeout - user will be prompted to refresh if needed")
+      }
     }
   }
 

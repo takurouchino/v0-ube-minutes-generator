@@ -1,5 +1,80 @@
 import { NextResponse } from "next/server"
-import { getMinutes } from "@/lib/supabase-minutes"
+import { supabase } from "@/lib/supabase"
+
+// AIチャット用の軽量な議事録データ取得（キャッシュ付き）
+const minutesCache = new Map<string, { data: any[], timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5分間キャッシュ
+
+async function getMinutesForChat(companyId: string, limit: number = 20) {
+  // キャッシュチェック
+  const cacheKey = `${companyId}-${limit}`
+  const cached = minutesCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log("Using cached minutes data")
+    return cached.data
+  }
+
+  try {
+    // 必要最小限のデータのみ取得
+    const { data, error } = await supabase
+      .from("minutes")
+      .select(`
+        id,
+        title,
+        date,
+        time,
+        content,
+        summary_progress,
+        summary_key_points,
+        summary_decisions,
+        summary_actions,
+        keywords,
+        status,
+        author,
+        participant_details:minute_participants(
+          participant:participants(name, position)
+        )
+      `)
+      .eq("company_id", companyId)
+      .order("date", { ascending: false })
+      .limit(limit) // 最新のN件のみ取得
+
+    if (error) throw error
+
+    // データを軽量化
+    const formattedData = (data || []).map((minute: any) => ({
+      id: minute.id,
+      title: minute.title || "無題の議事録",
+      date: minute.date,
+      time: minute.time,
+      content: minute.content || "",
+      summary_progress: minute.summary_progress || "",
+      summary_key_points: minute.summary_key_points || "",
+      summary_decisions: minute.summary_decisions || "",
+      summary_actions: minute.summary_actions || "",
+      keywords: minute.keywords || [],
+      status: minute.status,
+      author: minute.author,
+      participant_details: minute.participant_details
+        ?.filter((pd: any) => pd.participant)
+        .map((pd: any) => ({
+          name: pd.participant.name,
+          position: pd.participant.position || "役職不明"
+        })) || []
+    }))
+
+    // キャッシュに保存
+    minutesCache.set(cacheKey, {
+      data: formattedData,
+      timestamp: Date.now()
+    })
+
+    return formattedData
+  } catch (error) {
+    console.error("Error fetching minutes for chat:", error)
+    return []
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -27,8 +102,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 議事録データを取得
-    const minutes = await getMinutes(companyId)
+    // 最適化された議事録データを取得（AIチャット用）
+    const minutes = await getMinutesForChat(companyId)
 
     if (!minutes || minutes.length === 0) {
       return NextResponse.json({
@@ -36,11 +111,11 @@ export async function POST(request: Request) {
       })
     }
 
-    // 議事録データを文字列形式に変換
+        // 議事録データを文字列形式に変換
     const minutesContext = minutes
-      .map((minute) => {
+      .map((minute: any) => {
         const participants =
-          minute.participant_details?.map((p) => `${p.name}（${p.position || "役職不明"}）`).join("、") ||
+          minute.participant_details?.map((p: any) => `${p.name}（${p.position || "役職不明"}）`).join("、") ||
           "参加者情報なし"
 
         return `
@@ -85,7 +160,7 @@ ${question}
 
     console.log("Sending request to OpenAI API for chat response...")
 
-    // OpenAI APIを直接呼び出し
+    // OpenAI APIをストリーミングで呼び出し
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -93,7 +168,7 @@ ${question}
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-4o-mini", // より高速なモデルを使用
         messages: [
           {
             role: "system",
@@ -106,6 +181,7 @@ ${question}
         ],
         temperature: 0.3,
         max_tokens: 1000,
+        stream: true,  // ストリーミングを有効化
       }),
     })
 
@@ -133,16 +209,60 @@ ${question}
       }
     }
 
-    const data = await response.json()
-    console.log("Received response from OpenAI API for chat")
+    // ストリーミングレスポンスを返す
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body?.getReader()
+        if (!reader) {
+          controller.close()
+          return
+        }
 
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      return NextResponse.json({ error: "OpenAI APIからの応答形式が無効です" }, { status: 500 })
-    }
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
 
-    const aiResponse = data.choices[0].message.content
+            const chunk = new TextDecoder().decode(value)
+            const lines = chunk.split('\n').filter(line => line.trim() !== '')
 
-    return NextResponse.json({ response: aiResponse })
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6)
+                if (data === '[DONE]') {
+                  controller.close()
+                  return
+                }
+
+                try {
+                  const parsed = JSON.parse(data)
+                  const content = parsed.choices?.[0]?.delta?.content
+                  if (content) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                  }
+                } catch (e) {
+                  // JSON解析エラーは無視
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Streaming error:', error)
+          controller.error(error)
+        } finally {
+          reader.releaseLock()
+        }
+      }
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    })
   } catch (error) {
     console.error("Error in chat-minutes route:", error)
     return NextResponse.json(

@@ -70,7 +70,17 @@ export default function ChatPage() {
     setIsLoading(true)
 
     try {
-      // AI APIを呼び出し
+      // 一時的なアシスタントメッセージを作成
+      const tempAssistantId = (Date.now() + 1).toString()
+      const tempAssistantMessage: Message = {
+        id: tempAssistantId,
+        content: "",
+        role: "assistant",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, tempAssistantMessage])
+
+      // AI APIをストリーミングで呼び出し
       const response = await fetch("/api/chat-minutes", {
         method: "POST",
         headers: {
@@ -82,20 +92,55 @@ export default function ChatPage() {
         }),
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.error || "APIエラーが発生しました")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "APIエラーが発生しました")
       }
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: data.response,
-        role: "assistant",
-        timestamp: new Date(),
+      // ストリーミングレスポンスを処理
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error("ストリーミングレスポンスが取得できません")
       }
 
-      setMessages((prev) => [...prev, assistantMessage])
+      let fullContent = ""
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = new TextDecoder().decode(value)
+          const lines = chunk.split('\n').filter(line => line.trim() !== '')
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6)
+              if (data === '[DONE]') break
+
+              try {
+                const parsed = JSON.parse(data)
+                if (parsed.content) {
+                  fullContent += parsed.content
+                  
+                  // リアルタイムで表示を更新
+                  setMessages((prev) => 
+                    prev.map((msg) => 
+                      msg.id === tempAssistantId 
+                        ? { ...msg, content: fullContent }
+                        : msg
+                    )
+                  )
+                }
+              } catch (e) {
+                // JSON解析エラーは無視
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
     } catch (error) {
       console.error("Failed to generate response:", error)
       toast({
